@@ -1,0 +1,11 @@
+{# shop macros: import "with context" (prices show the viewer's currency too: shop.price_view) #}
+{% macro stars(avg, n=None, size='') %}{% set a = (avg or 0)|float %}<span class="hx-stars {{ size }}" title="{{ '%.1f'|format(a) }} out of 5{{ ' from ' ~ n ~ ' review' ~ ('' if n == 1 else 's') if n is not none }}" aria-label="{{ '%.1f'|format(a) }} out of 5">{% for i in range(1, 6) %}<i class="{{ 'fa-solid fa-star' if a >= i - 0.25 else 'fa-solid fa-star-half-stroke' if a >= i - 0.75 else 'fa-regular fa-star' }}" aria-hidden="true"></i>{% endfor %}{% if n is not none %}<small>{{ '%.1f'|format(a) if n else '' }} ({{ n }})</small>{% endif %}</span>{% endmacro %}
+{% macro product_card(p, seller='', cur='INR') %}{% set img = product_cover(p.id) %}{% set off = discount(p) %}{% set cur = p.currency or cur %}{# its own currency (the seller picks it) #}
+<a class="hx-pcard" href="/shop/p/{{ p.id }}">
+<span class="hx-pcard-img">{% if img %}<img src="{{ img }}" alt="" loading="lazy" width="480" height="480">{% else %}<i class="fa-solid fa-box-open" aria-hidden="true"></i>{% endif %}{% if off %}<b class="hx-pcard-off">-{{ off }}%</b>{% endif %}{% if not p.stock %}<b class="hx-pcard-out">out of stock</b>{% endif %}</span>
+<span class="hx-pcard-body"><span class="hx-pcard-title">{{ p.title }}</span>
+{% if p.rating_count %}{{ stars(p.rating_avg, p.rating_count) }}{% else %}<small class="hx-pcard-new">new</small>{% endif %}
+<span class="hx-pcard-price"><b>{{ price(cur, p.price_minor) }}</b>{% if off %} <s>{{ price(cur, p.mrp_minor)|striptags }}</s>{% endif %}</span>
+{% if seller %}<small class="hx-pcard-seller"><i class="fa-solid fa-store"></i> {{ seller }}</small>{% endif %}</span></a>{% endmacro %}
+{% macro status_pill(o) %}<span class="hx-opill hx-opill-{{ o.status }}">{{ order_status[o.status] }}</span>{% endmacro %}
+{% macro timeline_list(events) %}<ol class="hx-track" data-track>{% for e in events %}<li class="hx-track-{{ e.status }}"><i class="fa-solid {{ e.icon }}" aria-hidden="true"></i><div><b>{{ e.label }}</b>{% if e.location %} <span>· {{ e.location }}</span>{% endif %}{% if e.note %}<p>{{ e.note }}</p>{% endif %}<time>{{ e.at }}{% if e.by and e.source != 'system' %} · {{ e.by }}{% endif %}</time></div></li>{% endfor %}</ol>{% endmacro %}

@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+{% block title %}AI employee management{% endblock %}
+{# The intro page: what the app does, feature by feature (only what it really does: no made-up numbers). Everything moves: the hero rises in, the
+   terminal types itself (app.js [data-demo]), the strip scrolls, each card reveals on scroll (.hx-reveal) and plays its own small loop (.hx-viz-*:
+   CSS only, decorative, aria-hidden: the text says it all). prefers-reduced-motion stops every animation (app.css). #}
+{% block first %}{# ---------- the last load test, the first thing on the page (user asked), with the MVP verdict once a stress test has given one (routers/loadtest.py: no report file = no alert) ---------- #}
+{% set load = load_headline() %}{% if load %}<aside class="hx-load-alert{{ ' hx-load-alert-no' if load.mvp and not load.mvp.ready }}" role="status">
+<i class="fa-solid {{ 'fa-gauge-high' if not load.mvp else 'fa-circle-check' if load.mvp.ready else 'fa-triangle-exclamation' }}" aria-hidden="true"></i>
+{% if load.mvp %}<p class="hx-load-verdict">{% if load.mvp.ready %}MVP ready{% else %}Not MVP ready yet{% endif %}</p>{% endif %}
+<div>{% if load.mvp %}<span>{{ load.mvp.summary }}</span>{% endif %}<b>Load tested with Locust, with the AI running</b><span>{{ load.requests }} requests over {{ load.length }}, up to {{ load.people }} people at once, {{ load.ok }}% answered without failing</span>{% if load.flood %}<span>on a database flooded with {{ load.flood }}</span>{% endif %}</div>
+<a href="/load-test" class="hx-btn hx-btn-solid"><span>view the Locust results</span><i class="fa-solid fa-arrow-right"></i></a>
+</aside>{% endif %}{% endblock %}
+{% block content %}<div class="hx-wide">
+{# ---------- hero: what it is in one breath + the real instruction bar at work ---------- #}
+<section class="row align-items-center g-4 g-lg-5 hx-hero">
+<div class="col-lg-6">
+<span class="hx-kicker"><i class="fa-solid fa-shield-heart"></i> AI employee management that protects the people doing the work</span>
+<h1 class="hx-hero-title">Run your team.<br><span class="hx-grad">Protect your people.</span></h1>
+<p class="hx-lead">{{ app_name }} runs the people side of a company: hiring, fair attendance inside working hours, salaries {{ cycle_every }} with payslips, and a payroll guard that steps in before a company can owe its staff more than it has. Chats, video meetings with live captions, tasks and a marketplace shop come with it, on a local AI that keeps everything on your own server.</p>
+<ul class="hx-hero-points">
+<li><i class="fa-solid fa-business-time"></i>8-hour days, never more</li>
+<li><i class="fa-solid fa-user-clock"></i>fair idle detection</li>
+<li><i class="fa-solid fa-laptop-house"></i>join as a freelancer</li>
+<li><i class="fa-solid fa-robot"></i>a payroll guard</li>
+</ul>
+<div class="hx-actions">
+{% if user %}<a href="/dashboard" class="hx-btn hx-btn-solid"><span>open dashboard</span><i class="fa-solid fa-arrow-right"></i></a>
+<p class="hx-out"><i class="fa-solid fa-user-secret"></i>signed in as {{ user.username }}<span class="hx-badge">session active</span></p>
+{% else %}<a href="/register" class="hx-btn hx-btn-solid"><span>get started</span><i class="fa-solid fa-arrow-right"></i></a>
+<a href="/login" class="hx-btn"><span>log in</span></a>{% endif %}
+</div>
+</div>
+<div class="col-lg-6">
+<div class="hx-term hx-demo-term">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/dashboard</span></div>
+{# the real instruction bar (assist.py), as the owner of a company called Acme with a rookie called ben: every command and reply is word for word what POST /assist gives, so change them together. None of them is off in single company mode (the salary reply is one sentence shorter there, as in assist.py). In <code>: the translator leaves them alone, a command only works as written #}
+<div class="hx-term-body hx-demo" data-demo role="img" aria-label="The instruction bar, as the owner of Acme. Promote ben to manager and a salary you type both wait for you to confirm; upload my resume opens your profile; a question it can't place goes to the Deminic AI.">
+<div class="hx-line hx-dim">// tell me what to do, in one line · as Acme's owner</div>
+<div class="hx-line hx-cmd"><span class="hx-prompt">&gt;</span> <code class="hx-t">promote ben to manager</code></div>
+<div class="hx-line hx-dim"><code><span class="hx-ok">[  ok  ]</span> understood via pgvector, distance 0.00</code></div>
+<div class="hx-line"><code>ben: Rookie → Manager in Acme?</code></div>
+<div class="hx-line hx-dim"><code><span class="hx-wait">[ wait ]</span> nothing happens until you confirm</code></div>
+<div class="hx-line hx-cmd"><span class="hx-prompt">&gt;</span> <code class="hx-t">i want 50k to 80k inr a month</code></div>
+<div class="hx-line hx-dim"><code><span class="hx-ok">[  ok  ]</span> understood via rules</code></div>
+<div class="hx-line"><code>Save your expected salary as 50,000–80,000 INR per month?{% if not single_company() %} Recommendations will show which companies pay it.{% endif %}</code></div>
+<div class="hx-line hx-dim"><code><span class="hx-wait">[ wait ]</span> nothing happens until you confirm</code></div>
+<div class="hx-line hx-cmd"><span class="hx-prompt">&gt;</span> <code class="hx-t">upload my resume</code></div>
+<div class="hx-line"><code>→ /profile</code></div>
+{% if ai_status().ready %}<div class="hx-line hx-cmd"><span class="hx-prompt">&gt;</span> <code class="hx-t">what should a new employee do in their first week?</code></div>
+<div class="hx-line"><code>» Deminic is answering that: watch it write in its chat (bottom right).</code></div>{% endif %}
+<div class="hx-line hx-cmd"><span class="hx-prompt">&gt;</span> <span class="hx-cursor">_</span></div>
+</div>
+</div>
+</div>
+</section>
+{# ---------- a scrolling strip of what's under the hood (decorative: the same points are in the sections below) ---------- #}
+{% set strip = [("fa-lock", "bank + ID numbers AES-256 encrypted"), ("fa-virus-slash", "every upload virus-scanned"), ("fa-code", "nonce-only content security policy"), ("fa-brain", "a local AI: nothing leaves your server"),
+                ("fa-closed-captioning", "Whisper captions, translated to English"), ("fa-diagram-project", "matching by meaning (pgvector)"), ("fa-coins", "salaries in many currencies, at the day's rate"),
+                ("fa-building-columns", "IBAN · SWIFT · ABA · IFSC checked"), ("fa-key", "one login per account"), ("fa-file-lines", "a daily activity log")] %}
+<div class="hx-ticker" aria-hidden="true"><div class="hx-ticker-track">{% for _ in range(2) %}{% for i, t in strip %}<span><i class="fa-solid {{ i }}"></i>{{ t }}</span>{% endfor %}{% endfor %}</div></div>
+{# ---------- protection ---------- #}
+<section class="hx-section">
+<p class="hx-eyebrow">// built to protect the people doing the work</p>
+<div class="row g-4">
+<div class="col-md-6 col-xl-3"><article class="hx-card hx-reveal hx-feat">
+<div class="hx-viz hx-viz-hours" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><b>cap</b></div>
+<h2><i class="fa-solid fa-business-time"></i>8-hour days</h2>
+<p>A company's working day can't be longer than 8 hours, and attendance only counts inside it. Tasks can't be given outside working hours or on public holidays.</p>
+</article></div>
+<div class="col-md-6 col-xl-3"><article class="hx-card hx-reveal hx-feat">
+<div class="hx-viz hx-viz-guard" aria-hidden="true"><span class="hx-scan"></span><i class="fa-solid fa-shield-halved"></i></div>
+<h2><i class="fa-solid fa-robot"></i>the payroll guard</h2>
+<p>Every company's funds are checked against what its people have earned, in one currency at the day's rate. If it falls short, the owners are warned; 24 hours on, the company is halted and every employee is told.</p>
+</article></div>
+<div class="col-md-6 col-xl-3"><article class="hx-card hx-reveal hx-feat">
+<div class="hx-viz hx-viz-pay" aria-hidden="true"><i class="fa-solid fa-file-invoice-dollar"></i><span class="hx-viz-lines"><span></span><span></span><span></span></span><i class="fa-solid fa-circle-check hx-viz-ok"></i></div>
+<h2><i class="fa-solid fa-calendar-check"></i>paid {{ cycle_every }}</h2>
+<p>Salary counts from the day you join: at least your position's minimum. Every payment carries the bank's reference and a screenshot, with a payslip and a receipt in your statements.</p>
+</article></div>
+<div class="col-md-6 col-xl-3"><article class="hx-card hx-reveal hx-feat">
+<div class="hx-viz hx-viz-steps" aria-hidden="true"><span><i class="fa-solid fa-user-check"></i></span><span><i class="fa-solid fa-sack-dollar"></i></span><span><i class="fa-solid fa-door-open"></i></span></div>
+<h2><i class="fa-solid fa-scale-balanced"></i>fair in, fair out</h2>
+<p>Joining and leaving need approval, and you only leave once every salary due to you is paid. A company's terms are shown before you join, and any change is yours to accept.</p>
+</article></div>
+</div>
+</section>
+{# ---------- attendance ---------- #}
+<section class="hx-section">
+<p class="hx-eyebrow">// attendance that's fair</p>
+<div class="row g-4 align-items-center">
+<div class="col-lg-6"><ul class="hx-promises hx-reveal">
+<li><i class="fa-solid fa-signal"></i><div><b>active or idle, nothing else</b><span>Active means {{ app_name }} is open and was used in the last 5 minutes. Nothing you type or look at is recorded.</span></div></li>
+<li><i class="fa-solid fa-hourglass-half"></i><div><b>idle detection, out loud</b><span>Idle during working hours? A warning stays on screen until you're back, then says how long it lasted. That time isn't counted, and you always know.</span></div></li>
+<li><i class="fa-solid fa-display"></i><div><b>work in VS Code counts too</b><span>Allow it once and Chrome or Edge tells {{ app_name }} only whether the computer is in use, never what you do, so time in other apps counts.</span></div></li>
+<li><i class="fa-solid fa-laptop-house"></i><div><b>the freelancer option</b><span>Where a company offers it, join as a freelancer. Freelancers, owners and co-owners are never monitored.</span></div></li>
+</ul></div>
+<div class="col-lg-6"><div class="hx-term hx-reveal hx-workday" aria-hidden="true">
+<div class="hx-term-bar"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/attendance · one working day</span></div>
+<div class="hx-term-body">
+<div class="hx-day-row"><span>staff</span><div class="hx-day-bar"><i class="hx-day-on"></i><i class="hx-day-on"></i><i class="hx-day-idle"></i><i class="hx-day-on"></i><i class="hx-day-on"></i><i class="hx-day-idle"></i><i class="hx-day-on"></i><i class="hx-day-on"></i></div></div>
+<div class="hx-day-row"><span>other apps</span><div class="hx-day-bar"><i class="hx-day-on"></i><i class="hx-day-on"></i><i class="hx-day-on"></i><i class="hx-day-on"></i><i class="hx-day-on"></i><i class="hx-day-idle"></i><i class="hx-day-on"></i><i class="hx-day-on"></i></div></div>
+<div class="hx-day-row"><span>freelancer</span><div class="hx-day-bar hx-day-free"><em><i class="fa-solid fa-eye-slash"></i> not monitored</em></div></div>
+<div class="hx-day-live"><span class="hx-live-dot"></span><span class="hx-live-on">online: this counts</span><span class="hx-live-idle">idle: move the mouse to carry on</span></div>
+<div class="hx-day-legend"><span class="hx-day-k-on">active: counts</span><span class="hx-day-k-idle">idle: doesn't count</span><span class="hx-day-k-out">outside working hours: never counted</span></div>
+</div></div></div>
+</div>
+</section>
+{# ---------- together ---------- #}
+<section class="hx-section">
+<p class="hx-eyebrow">// work together</p>
+<div class="row g-4">
+<div class="col-md-4"><article class="hx-card hx-reveal hx-feat">
+<div class="hx-viz hx-viz-chat" aria-hidden="true"><span>lunch at 1?</span><span>sure, the usual place</span><span><i class="fa-solid fa-building"></i> company chat · backend team</span></div>
+<h2><i class="fa-solid fa-comments"></i>chats, live</h2>
+<p>Message anyone in your companies, one to one or in groups, from the chat button on every page. Company chats are labelled (its owner, managers and HR can read them); personal chats are for the two of you. Encrypted at rest.</p>
+</article></div>
+<div class="col-md-4"><article class="hx-card hx-reveal hx-feat">
+<div class="hx-viz hx-viz-meet" aria-hidden="true"><span class="hx-viz-tile"><i class="fa-solid fa-user"></i></span><span class="hx-viz-tile"><i class="fa-solid fa-user-tie"></i></span><span class="hx-viz-rec">rec</span><span class="hx-viz-cap"><span>the release goes out at five</span></span></div>
+<h2><i class="fa-solid fa-video"></i>meetings with captions</h2>
+<p>Video calls with screen sharing and recording. Whisper captions everyone in English as they talk, and the local AI keeps notes. Only the people invited can join, one call per company at a time.</p>
+</article></div>
+<div class="col-md-4"><article class="hx-card hx-reveal hx-feat">
+<div class="hx-viz hx-viz-cal" aria-hidden="true"><span></span><span></span><span></span><span class="hx-viz-hol"></span><span></span><span class="hx-viz-off"></span><span class="hx-viz-off"></span><i></i></div>
+<h2><i class="fa-solid fa-list-check"></i>tasks &amp; a calendar</h2>
+<p>Tasks with deadlines on the company's clock, on a calendar that shows your region's public holidays. Likes and dislikes come with a reason, and nobody can pile them on.</p>
+</article></div>
+</div>
+</section>
+{# ---------- new: the AI, languages, money and control ---------- #}
+<section class="hx-section">
+<p class="hx-eyebrow">// new: an AI in your chats, your language, any currency</p>
+<div class="row g-4">
+<div class="col-md-6 col-xl-3"><article class="hx-card hx-reveal hx-feat">
+<div class="hx-viz hx-viz-type" aria-hidden="true"><i class="fa-solid fa-robot"></i><span>who won the match last night? · searching the web…</span></div>
+<h2><i class="fa-solid fa-robot"></i>Deminic AI, in every chat</h2>
+<p>A private AI chat on the chat button of every page. It streams its answer as it writes, reads pictures you attach, and searches the web when you ask (each result labelled). It runs on this server, not in the cloud.</p>
+</article></div>
+<div class="col-md-6 col-xl-3"><article class="hx-card hx-reveal hx-feat">
+<div class="hx-viz hx-viz-steps" aria-hidden="true"><span><i class="fa-solid fa-language"></i></span><span>हिं</span><span>ع</span></div>
+<h2><i class="fa-solid fa-language"></i>your language</h2>
+<p>Pick a language in the header: Hindi, Arabic (right to left), German, French, Dutch, Spanish, Italian or Chinese. Pages are translated on this server, and your choice follows your account.</p>
+</article></div>
+<div class="col-md-6 col-xl-3"><article class="hx-card hx-reveal hx-feat">
+<div class="hx-viz hx-viz-pay" aria-hidden="true"><i class="fa-solid fa-coins"></i><span class="hx-viz-lines"><span></span><span></span><span></span></span><i class="fa-solid fa-circle-check hx-viz-ok"></i></div>
+<h2><i class="fa-solid fa-coins"></i>salaries in any currency</h2>
+<p>Pay a salary in INR, USD, EUR, GBP, AUD, CAD, SGD or AED. It's checked against the minimum and the company's funds at the day's rate, and the payslip keeps the rate it used.</p>
+</article></div>
+<div class="col-md-6 col-xl-3"><article class="hx-card hx-reveal hx-feat">
+<div class="hx-viz hx-viz-guard" aria-hidden="true"><span class="hx-scan"></span><i class="fa-solid fa-user-shield"></i></div>
+<h2><i class="fa-solid fa-user-shield"></i>an admin who watches</h2>
+<p>Spam and floods are paused automatically and the AI warns the admin about repeat offenders. The admin can ban accounts and IP addresses with a reason, sees every IP during an overload, and can switch on single company mode.</p>
+</article></div>
+</div>
+<ul class="hx-trust hx-gap">
+<li class="hx-reveal"><i class="fa-solid fa-ranking-star"></i><b>an AI that knows the team</b><span>promotions from CVs, reviews and how fast the work gets done, and who's best for any task, ranked in a moment</span></li>
+<li class="hx-reveal"><i class="fa-solid fa-key"></i><b>forgot your username or password?</b><span>a 10-minute code to your email or phone gets you back in</span></li>
+<li class="hx-reveal"><i class="fa-solid fa-paperclip"></i><b>files in every chat</b><span>several at once, dragged in or pasted, with link and YouTube previews, copy and forward</span></li>
+<li class="hx-reveal"><i class="fa-solid fa-calendar-days"></i><b>attendance on your calendar</b><span>present, part of the day, absent or on leave, day by day</span></li>
+<li class="hx-reveal"><i class="fa-solid fa-users-rectangle"></i><b>your accounts, remembered</b><span>the login page lists the accounts used on this browser (usernames only, never passwords)</span></li>
+</ul>
+</section>
+{# ---------- hiring ---------- #}
+<section class="hx-section">
+<p class="hx-eyebrow">// hire and get hired</p>
+<div class="row g-4">
+<div class="col-md-4"><article class="hx-card hx-reveal hx-feat">
+<div class="hx-viz hx-viz-type" aria-hidden="true"><i class="fa-solid fa-wand-magic-sparkles"></i><span>python job · pays in USD · no weekends</span></div>
+<h2><i class="fa-solid fa-terminal"></i>an AI company finder</h2>
+<p>Say what you want in your own words. It reads pay in any currency, hours, weekends, freelancing and the city, finds the companies that fit and tells you what you left out.</p>
+</article></div>
+<div class="col-md-4"><article class="hx-card hx-reveal hx-feat">
+<div class="hx-viz hx-viz-match" aria-hidden="true"><span><i class="fa-solid fa-user"></i></span><i class="hx-viz-link"></i><span><i class="fa-solid fa-building"></i></span></div>
+<h2><i class="fa-solid fa-bullseye"></i>matched by meaning</h2>
+<p>Your profile and CV are matched with companies by what they mean, not by keywords. Owners find people the same way, and a job offer always comes with its salary.</p>
+</article></div>
+<div class="col-md-4"><article class="hx-card hx-reveal hx-feat">
+<div class="hx-viz hx-viz-kyc" aria-hidden="true"><i class="fa-solid fa-id-card"></i><i class="fa-solid fa-building-circle-check"></i><i class="fa-solid fa-circle-check hx-viz-ok"></i></div>
+<h2><i class="fa-solid fa-user-shield"></i>verified on both sides</h2>
+<p>Every listed company's registration and location are checked, and everyone in a company has an identity proof on file. Bank details are checked too, across borders.</p>
+</article></div>
+</div>
+</section>
+{# ---------- the shop ---------- #}
+<section class="hx-section">
+<p class="hx-eyebrow">// sell on the shop</p>
+<article class="hx-card hx-reveal hx-shop-pitch">
+<div class="row g-4 align-items-center">
+<div class="col-lg-6">
+<h2><i class="fa-solid fa-bag-shopping"></i> a marketplace for the companies here</h2>
+<p>A startup can open its shop while creating the company. Listings get photos, videos, reviews and ratings, and an AI that answers buyers' questions from the listing and its reviews. Ship with Blue Dart and other couriers, or deliver yourself with the buyer's code. The platform takes its commission only on a successful sale: delivered and paid.</p>
+<ul class="hx-shop-perks">
+<li><i class="fa-solid fa-magnifying-glass-dollar"></i>competitor prices, tracked by the AI</li>
+<li><i class="fa-solid fa-chart-pie"></i>revenue charts</li>
+<li><i class="fa-solid fa-file-excel"></i>monthly Excel statement with tax</li>
+<li><i class="fa-solid fa-list-check"></i>packing tasks given by the AI</li>
+</ul>
+</div>
+<div class="col-lg-6"><div class="hx-route" aria-hidden="true"><span class="hx-route-line"></span><span class="hx-route-pt"><i class="fa-solid fa-cart-shopping"></i>placed</span><span class="hx-route-pt"><i class="fa-solid fa-box"></i>packed</span><span class="hx-route-pt"><i class="fa-solid fa-truck"></i>shipped</span><span class="hx-route-pt"><i class="fa-solid fa-house-circle-check"></i>delivered</span><i class="fa-solid fa-truck-fast hx-route-truck"></i></div></div>
+</div>
+</article>
+</section>
+{# ---------- trust ---------- #}
+<section class="hx-section">
+<p class="hx-eyebrow">// trust &amp; security</p>
+<ul class="hx-trust">
+<li class="hx-reveal"><i class="fa-solid fa-lock"></i><b>encrypted where it matters</b><span>bank and ID numbers with AES-256: only the last 4 digits are ever shown again</span></li>
+<li class="hx-reveal"><i class="fa-solid fa-virus-slash"></i><b>every upload scanned</b><span>ClamAV checks each file; pictures are re-encoded and their metadata dropped</span></li>
+<li class="hx-reveal"><i class="fa-solid fa-key"></i><b>one login per account</b><span>the session is re-checked against the database on every page, and changing bank details needs your password</span></li>
+<li class="hx-reveal"><i class="fa-solid fa-file-lines"></i><b>a daily activity log</b><span>who did what and when, written to a file for each day</span></li>
+</ul>
+</section>
+{# ---------- how it works ---------- #}
+<section class="hx-section">
+<p class="hx-eyebrow">// how it works</p>
+<ol class="hx-pipeline hx-pipeline-4">
+<li class="hx-reveal"><span class="hx-icon"><i class="fa-solid fa-building"></i></span><h3>create or join</h3><p>a verified company, or join one with your identity proof and bank details</p></li>
+<li class="hx-reveal"><span class="hx-icon"><i class="fa-solid fa-laptop-code"></i></span><h3>work</h3><p>tasks, chats and meetings, with attendance counted only in working hours</p></li>
+<li class="hx-reveal"><span class="hx-icon"><i class="fa-solid fa-shield-halved"></i></span><h3>guarded</h3><p>the payroll guard keeps checking that what you've earned is covered</p></li>
+<li class="hx-reveal"><span class="hx-icon"><i class="fa-solid fa-money-bill-wave"></i></span><h3>paid</h3><p>{{ cycle_every }}, with a payslip and a receipt</p></li>
+</ol>
+</section>
+{# ---------- contact (navbar "contact" links here) ---------- #}
+<section id="contact" class="hx-section">
+<div class="hx-term hx-reveal hx-contact">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/contact</span></div>
+<div class="hx-term-body">
+<h2 class="hx-title"><span class="hx-prompt">$</span> ./contact</h2>
+<p class="hx-sub">// questions, demos or access for your team. {{ app_name }} is a student project and isn't free to use: ask first (see the <a href="/terms">terms &amp; conditions</a>)</p>
+{% if contact_email %}<a href="mailto:{{ contact_email }}" class="hx-btn hx-btn-solid"><span>{{ contact_email }}</span><i class="fa-solid fa-paper-plane"></i></a>{% endif %}
+<a href="/terms" class="hx-btn mt-3"><span>terms &amp; how to get access</span><i class="fa-solid fa-scale-balanced"></i></a>
+</div>
+</div>
+</section>
+</div>{% endblock %}

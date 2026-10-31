@@ -1,0 +1,78 @@
+{% extends "base.html" %}{% from "_shop.html" import product_card, stars with context %}
+{# routers/shop.py product_page(): p, s (Shop), c (Company), seller (you run its shop), media [{kind, slot, url, thumb}], reviews, hist {rating: n}, mine (your review),
+   bought (a delivered order of yours with it), public_qa (seller-answered), my_qa (your questions + the AI's answers), alike [(Product, distance)], alike_cur,
+   in_cart, summary ({summary, pros, cons, from} by the AI), ai (local AI status), highlights, ship (shipping for one), pay #}
+{% block title %}{{ p.title }}{% endblock %}
+{% block content %}<div class="hx-wide">
+<nav class="hx-crumbs" aria-label="Breadcrumb"><a href="/shop">shop</a> / <a href="/shop?cat={{ p.category }}">{{ shop_categories[p.category] }}</a> / <a href="/shop/s/{{ s.public_id }}">{{ c.name }}</a></nav>
+{% if seller %}<p class="hx-hint hx-ok"><i class="fa-solid fa-store"></i> your shop's product ({{ p.status }}) · <a href="/companies/{{ c.id }}/shop/products/{{ p.id }}">edit it, competitors + the AI's brief →</a></p>{% endif %}
+<section class="hx-product">
+<div class="hx-gallery" data-gallery>
+<div class="hx-gallery-main">{% if media %}{% set m0 = media[0] %}{% if m0.kind == 'photo' %}<img src="{{ m0.url }}" alt="{{ p.title }}" data-gallery-main>{% else %}<video src="{{ m0.url }}" controls preload="metadata" data-gallery-main></video>{% endif %}
+{% else %}<div class="hx-gallery-none"><i class="fa-solid fa-box-open"></i><span>no photos yet</span></div>{% endif %}</div>
+{% if media|length > 1 %}<div class="hx-gallery-thumbs" role="list">{% for m in media %}<button type="button" class="hx-gthumb{{ ' hx-active' if loop.first }}" data-gallery-pick="{{ m.url }}" data-kind="{{ m.kind }}" role="listitem" aria-label="{{ m.kind }} {{ loop.index }}">{% if m.kind == 'photo' %}<img src="{{ m.thumb }}" alt="" loading="lazy">{% else %}<i class="fa-solid fa-circle-play"></i><span>video</span>{% endif %}</button>{% endfor %}</div>{% endif %}
+</div>
+<div class="hx-buy">
+<p class="hx-eyebrow">// {{ p.brand or c.name }}</p>
+<h1 class="hx-ptitle">{{ p.title }}</h1>
+<p class="hx-prating">{% if p.rating_count %}<a href="#reviews">{{ stars(p.rating_avg, p.rating_count) }}</a>{% else %}<small class="hx-hint">no reviews yet</small>{% endif %}{% if p.sold %} · <small>{{ p.sold }} sold</small>{% endif %}</p>
+{% set off = discount(p) %}
+{% set cur = p.currency or s.currency %}<div class="hx-pprice"><b>{{ price(cur, p.price_minor) }}</b>{% if off %}<s>{{ price(cur, p.mrp_minor)|striptags }}</s><span class="hx-pcard-off">-{{ off }}%</span>{% endif %}</div>
+<p class="hx-hint">// {% if cur != s.currency %}charged in the shop's currency: {{ price_plain(s.currency, shop_price(p, s)) }} at today's rate ·{% endif %}tax included{{ ' (' ~ ('%g'|format(p.tax_rate|float)) ~ '% GST / VAT)' if p.tax_rate else '' }} · shipping {{ 'free' if not ship else price(s.currency, ship)|striptags }}{{ ', free from ' ~ price(s.currency, s.free_over_minor)|striptags if s.free_over_minor and ship }} · returns within {{ s.returns_days }} days of delivery{{ ' · cash on delivery' if s.cod }}</p>
+<p class="{{ 'hx-ok-msg' if p.stock > 3 else 'hx-warn-msg' if p.stock else 'hx-err-msg' }}"><i class="fa-solid {{ 'fa-circle-check' if p.stock else 'fa-circle-xmark' }}"></i> {{ ('in stock' if p.stock > 3 else 'only ' ~ p.stock ~ ' left') if p.stock else 'out of stock' }}</p>
+{% if user %}{% if p.stock and p.status == 'active' %}<form method="post" action="/shop/cart" class="hx-buy-row">{{ csrf_input(request) }}<input type="hidden" name="product_id" value="{{ p.id }}"><input type="hidden" name="token" value="{{ add_token }}">
+<label class="visually-hidden" for="qty">Quantity</label><select id="qty" name="qty" class="hx-select hx-select-lg">{% for n in range(1, [p.stock, p.max_per_order]|min + 1) %}<option value="{{ n }}">{{ n }}</option>{% endfor %}</select>
+<button class="hx-btn hx-btn-solid" data-busy="adding…"><i class="fa-solid fa-cart-plus"></i><span>add to cart</span></button>{% if in_cart %}<a class="hx-btn hx-btn-ghost" href="/shop/cart"><span>{{ in_cart }} in your cart →</span></a>{% endif %}</form>{% endif %}
+{% else %}<p class="hx-hint"><a href="/login">log in</a> or <a href="/register">sign up</a> to buy, review and ask the AI</p>{% endif %}
+<a class="hx-seller-card" href="/shop/s/{{ s.public_id }}">{% if picture('c', c.id) %}<img src="{{ picture('c', c.id) }}" alt="" width="40" height="40">{% endif %}<span><small>sold by</small><b>{{ c.name }}</b><small>verified registration · {{ c.location_address|truncate(60) }}</small></span><i class="fa-solid fa-arrow-right"></i></a>
+{% if highlights %}<ul class="hx-highlights">{% for h in highlights %}<li><i class="fa-solid fa-check"></i>{{ h }}</li>{% endfor %}</ul>{% endif %}
+</div>
+</section>
+<section class="hx-section hx-ask" id="ask">
+<p class="hx-eyebrow">// ask about this product · the AI answers from the listing, the reviews and the seller's answers</p>
+<div class="hx-card hx-ask-card">
+{% if user %}<form method="post" action="/shop/p/{{ p.id }}/ask" class="hx-ask-form" data-ask>{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-wand-magic-sparkles"></i><span class="visually-hidden">Your question</span><input name="question" minlength="4" maxlength="500" placeholder="e.g. does it keep drinks cold all day? is it dishwasher safe?" required autocomplete="off"></label>
+<button class="hx-btn hx-btn-solid" data-busy="asking…"{{ ' disabled' if not ai.ready }}><span>ask</span><i class="fa-solid fa-paper-plane"></i></button></form>
+<div class="hx-ask-chips">{% for q in ["What's it made of?", "How big is it?", "What do buyers complain about?", "Is it worth the price?"] %}<button type="button" class="hx-btn hx-btn-sm hx-btn-ghost" data-ask-chip="{{ q }}"><span>{{ q }}</span></button>{% endfor %}</div>
+{% if not ai.ready %}<p class="hx-err-msg"><i class="fa-solid fa-plug-circle-xmark"></i> The shopping assistant is offline right now ({{ ai.detail }}): questions go to the seller instead.</p>{% endif %}
+{% else %}<p class="hx-hint"><a href="/login">log in</a> to ask the AI about this product</p>{% endif %}
+<ol class="hx-qa" data-qa-mine>{% for q in my_qa %}<li class="hx-qa-item" data-question="{{ q.id }}" data-status="{{ q.status }}"><p class="hx-qa-q"><i class="fa-solid fa-user"></i> {{ q.question }}</p>
+<p class="hx-qa-a" data-answer>{% if q.status == 'pending' %}<i class="fa-solid fa-spinner fa-spin"></i> thinking…{% elif q.status == 'failed' %}The assistant couldn't answer just now: ask again in a moment.{% else %}<i class="fa-solid fa-wand-magic-sparkles"></i> {{ q.answer }}{% endif %}</p>
+{% if q.status == 'done' %}<small class="hx-qa-meta" data-meta>AI answer · {{ q.confidence }} confidence{{ ' · from ' ~ q.sources if q.sources }}{{ ' · the seller has been asked too' if q.ask_seller and not q.seller_answer }}</small>{% endif %}
+{% if q.seller_answer %}<p class="hx-qa-seller"><i class="fa-solid fa-store"></i> <b>{{ c.name }}:</b> {{ q.seller_answer }}</p>{% endif %}</li>{% endfor %}</ol>
+<p class="hx-hint">// AI answers can be wrong: they say how sure they are and where they come from. It never invents specs: when the listing doesn't say, it asks the seller for you · one question at a time; adverts, links and repeats are refused</p>
+</div>
+{% if public_qa %}<p class="hx-eyebrow hx-gap-sm" id="qa">// questions answered by the seller · {{ public_qa|length }}</p>
+<ol class="hx-qa">{% for q in public_qa %}<li class="hx-qa-item"><p class="hx-qa-q"><i class="fa-solid fa-circle-question"></i> {{ q.question }}</p><p class="hx-qa-seller"><i class="fa-solid fa-store"></i> <b>{{ c.name }}:</b> {{ q.seller_answer }}</p><small class="hx-qa-meta">asked by {{ q.asker }} · answered {{ q.answered_at|tenure }} ago</small></li>{% endfor %}</ol>{% endif %}
+</section>
+{% if p.description %}<section class="hx-section" id="about"><p class="hx-eyebrow">// about it</p><div class="hx-card hx-pdesc">{{ p.description }}</div></section>{% endif %}
+<section class="hx-section" id="reviews">
+<p class="hx-eyebrow">// ratings &amp; reviews · {{ p.rating_count }}</p>
+<div class="hx-rgrid">
+<div class="hx-card hx-rsum"><b class="hx-rbig">{{ '%.1f'|format(p.rating_avg|float) }}</b>{{ stars(p.rating_avg, p.rating_count, 'hx-stars-lg') }}
+<ul class="hx-hist">{% for r in range(5, 0, -1) %}{% set n = hist.get(r, 0) %}<li><span>{{ r }} <i class="fa-solid fa-star"></i></span><span class="hx-hist-bar"><span data-w="{{ (n * 100 / p.rating_count)|round|int if p.rating_count else 0 }}"></span></span><span>{{ n }}</span></li>{% endfor %}</ul></div>
+<div class="hx-card hx-say">{% if summary %}<p class="hx-eyebrow"><i class="fa-solid fa-wand-magic-sparkles"></i> customers say · AI summary of {{ summary.from }} reviews</p><p>{{ summary.summary }}</p>
+<div class="hx-procon">{% if summary.pros %}<ul class="hx-pros">{% for x in summary.pros %}<li><i class="fa-solid fa-thumbs-up"></i>{{ x }}</li>{% endfor %}</ul>{% endif %}{% if summary.cons %}<ul class="hx-cons">{% for x in summary.cons %}<li><i class="fa-solid fa-thumbs-down"></i>{{ x }}</li>{% endfor %}</ul>{% endif %}</div>
+{% else %}<p class="hx-hint"><i class="fa-solid fa-wand-magic-sparkles"></i> once there are 3 reviews, the AI sums up what customers say here</p>{% endif %}</div>
+</div>
+{% if bought and user and not staff %}<details class="hx-card hx-review-form" id="review"{{ ' open' if not mine }}><summary class="hx-eyebrow">// {{ 'edit your review' if mine else 'review it: you bought it' }} <i class="fa-solid fa-chevron-down"></i></summary>
+<form method="post" action="/shop/p/{{ p.id }}/review" enctype="multipart/form-data" class="hx-form">{{ csrf_input(request) }}
+<fieldset class="hx-rate" aria-label="Your rating">{% for r in range(5, 0, -1) %}<input type="radio" name="rating" id="rate-{{ r }}" value="{{ r }}"{{ ' checked' if (mine and mine.rating == r) or (not mine and r == 5) }} required><label for="rate-{{ r }}" title="{{ r }} star{{ '' if r == 1 else 's' }}"><i class="fa-solid fa-star"></i></label>{% endfor %}</fieldset>
+<label class="hx-field"><i class="fa-solid fa-heading"></i><span class="visually-hidden">Title</span><input name="title" maxlength="120" value="{{ mine.title if mine else '' }}" placeholder="sum it up in a few words"></label>
+<label class="hx-field hx-area"><i class="fa-solid fa-align-left"></i><span class="visually-hidden">Your review</span><textarea name="body" rows="3" minlength="3" maxlength="3000" required placeholder="what you liked, what you didn't, how you use it">{{ mine.body if mine else '' }}</textarea></label>
+<div class="hx-reg-row">{% for i in range(1, 5) %}<label class="hx-field hx-file"><i class="fa-solid fa-image"></i><span class="visually-hidden">Photo {{ i }}</span><input type="file" name="photo{{ i }}" accept="image/png,image/jpeg,image/webp,image/gif"></label>{% if i == 2 %}</div><div class="hx-reg-row">{% endif %}{% endfor %}</div>
+<label class="hx-field hx-file"><i class="fa-solid fa-video"></i><span class="visually-hidden">Video</span><span class="hx-pfx" aria-hidden="true">video:</span><input type="file" name="video" accept="video/mp4,video/webm,video/quicktime"></label>
+<p class="hx-hint">// up to 4 photos and a video (3 minutes): photos are re-encoded and videos rebuilt, so the location and camera details your phone adds are removed</p>
+<button class="hx-btn hx-btn-solid" data-busy="posting…"><span>{{ 'update review' if mine else 'post review' }}</span><i class="fa-solid fa-paper-plane"></i></button></form>
+{% if mine %}<form method="post" action="/shop/reviews/{{ mine.id }}/delete" class="hx-gap-sm">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-trash"></i><span>delete my review</span></button></form>{% endif %}</details>{% endif %}
+{% if reviews %}<ol class="hx-reviews">{% for r in reviews %}<li class="hx-card hx-review" id="review-{{ r.id }}">
+<div class="hx-review-head">{{ stars(r.rating) }}<b>{{ r.title or ('★' * r.rating) }}</b></div>
+<small class="hx-review-meta">{{ r.author }} · {{ at(r.created_at, '%d %b %Y') }}{% if r.order_id %} · <span class="hx-ok"><i class="fa-solid fa-circle-check"></i> verified purchase</span>{% endif %}{% if r.updated_at and (r.updated_at - r.created_at).total_seconds() > 60 %} · edited{% endif %}</small>
+<p>{{ r.body }}</p>
+{% set shots = review_photos(r.id) %}{% set vid = review_video(r.id) %}{% if shots or vid %}<div class="hx-review-media">{% for s_ in shots %}<a href="/shop/media/r/{{ r.id }}/{{ s_ }}" target="_blank" rel="noopener"><img src="/shop/media/r/{{ r.id }}/{{ s_ }}?thumb=true" alt="photo {{ loop.index }} from {{ r.author }}" loading="lazy"></a>{% endfor %}{% if vid %}<video src="/shop/media/rv/{{ r.id }}" controls preload="metadata"></video>{% endif %}</div>{% endif %}
+{% if r.reply %}<p class="hx-qa-seller"><i class="fa-solid fa-store"></i> <b>{{ c.name }} replied:</b> {{ r.reply }}</p>{% endif %}</li>{% endfor %}</ol>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-star"></i><span>No reviews yet: people who buy it can rate it once it arrives.</span></p>{% endif %}
+</section>
+{% if alike %}<section class="hx-section"><p class="hx-eyebrow">// similar products from other sellers</p><div class="hx-pgrid hx-pgrid-sm">{% for x, d in alike %}{{ product_card(x, '', alike_cur.get(x.company_id, 'INR')) }}{% endfor %}</div></section>{% endif %}
+</div>{% endblock %}

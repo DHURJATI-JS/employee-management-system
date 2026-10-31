@@ -1,0 +1,57 @@
+{% extends "base.html" %}{% from "_bank_fields.html" import bank_codes %}
+{# routers/companies.py new_company_page(): positions (master dict), staff (positions a company can offer), join_as (forced on joining), currencies, periods, default_currency #}
+{% block title %}Create company{% endblock %}
+{% block content %}<section class="hx-term hx-auth hx-term-wide">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/companies/new.sh</span><span class="hx-term-meta"><i class="fa-solid fa-shield-halved"></i> csrf on</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>./create-company</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// you become its owner; a random uuid4 becomes its join code</p>
+{% if not user.bank %}<p class="hx-err-msg"><i class="fa-solid fa-building-columns"></i> Add your bank details first: you need them to create a company. <a href="/settings#bank">add bank details →</a></p>
+{% elif not user.identity %}<p class="hx-err-msg"><i class="fa-solid fa-id-card"></i> Add your identity proof first: you need it to create a company. <a href="/settings#identity">add identity proof →</a></p>{% endif %}
+<form method="post" class="hx-form" enctype="multipart/form-data">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-building"></i><span class="visually-hidden">Company name</span><span class="hx-pfx" aria-hidden="true">name:</span><input name="name" placeholder="Acme Corp" value="{{ request.query_params.get('name', '') }}" minlength="2" maxlength="64" required autofocus></label>
+<label class="hx-field hx-file"><i class="fa-solid fa-image"></i><span class="visually-hidden">Company logo (required)</span><span class="hx-pfx" aria-hidden="true">logo:</span><input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/gif" required></label>
+<p class="hx-hint">// required: shown big on your search card · square works best · JPEG, PNG, WebP or GIF · re-encoded, metadata removed</p>
+<div class="hx-reg-row"><label class="visually-hidden" for="proof-type">Identity proof document</label><select name="id_proof_type" id="proof-type" class="hx-select hx-select-lg" required>{% for k, v in company_proofs.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+<label class="hx-field hx-file"><i class="fa-solid fa-file-shield"></i><span class="visually-hidden">Photo of the company's identity proof (required)</span><span class="hx-pfx" aria-hidden="true">proof:</span><input type="file" name="id_proof" accept="image/png,image/jpeg,image/webp,image/gif" required></label></div>
+<p class="hx-hint">// required: a clear photo of the company's registration document · never public: only its owner, co-owners, managers and HR can open it</p>
+{% with c=None, held={} %}{% include "_company_fields.html" %}{% endwith %}
+<div class="hx-reg-row"><label class="visually-hidden" for="new-worth-cur">Currency of the net worth</label><select name="net_worth_currency" id="new-worth-cur" class="hx-select hx-select-lg"><option value="">same as salaries</option>{% for k in currencies %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select>
+<label class="hx-field"><i class="fa-solid fa-scale-balanced"></i><span class="visually-hidden">Net worth (optional)</span><span class="hx-pfx" aria-hidden="true">net worth (optional):</span><input type="number" name="net_worth" min="0" max="1000000000000000" step="1" inputmode="numeric" placeholder="500000" value="{{ request.query_params.get('net_worth', '') }}"></label></div>
+<p class="hx-hint">// the funds the company has, in any currency (e.g. INR while salaries are in USD: the payroll guard converts at the day's rate) · every payout is capped by it and takes its gross off it · while it's 0 (or empty) nobody can join: deposit funds later on the company dashboard</p>
+<p class="hx-eyebrow hx-gap-sm">// company bank account (optional) · salaries are paid from it, deposits go into it · leave it empty to add it later on the dashboard</p>
+<label class="hx-field"><i class="fa-solid fa-building"></i><span class="visually-hidden">Account name (defaults to the company name)</span><span class="hx-pfx" aria-hidden="true">holder:</span><input name="co_holder" maxlength="100" placeholder="as the bank has it (default: the company name)"></label>
+<div class="hx-reg-row"><label class="hx-field"><i class="fa-solid fa-building-columns"></i><span class="visually-hidden">Bank name</span><span class="hx-pfx" aria-hidden="true">bank:</span><input name="co_bank" maxlength="100" placeholder="e.g. HDFC Bank"></label>
+<label class="hx-field"><i class="fa-solid fa-code-branch"></i><span class="visually-hidden">Branch (optional)</span><span class="hx-pfx" aria-hidden="true">branch:</span><input name="co_branch" maxlength="100" placeholder="optional"></label></div>
+{{ bank_codes(None, 'co_country', 'co_routing', 'co_swift', 'co_bank_address', required=False) }}
+<div class="hx-reg-row"><label class="visually-hidden" for="co-account-type">Account type</label><select name="co_account_type" id="co-account-type" class="hx-select hx-select-lg">{% for t in account_types %}<option value="{{ t }}"{% if t == 'current' %} selected{% endif %}>{{ t }} account</option>{% endfor %}</select></div>
+<div class="hx-reg-row"><label class="hx-field"><i class="fa-solid fa-hashtag"></i><span class="visually-hidden">Account number</span><span class="hx-pfx" aria-hidden="true" data-bank-account-label>account no:</span><input name="co_account" inputmode="numeric" maxlength="40" placeholder="9 to 18 digits" autocomplete="off" spellcheck="false" data-bank-account></label>
+<label class="hx-field"><i class="fa-solid fa-hashtag"></i><span class="visually-hidden">Account number again</span><span class="hx-pfx" aria-hidden="true">again:</span><input name="co_account_confirm" inputmode="numeric" maxlength="40" placeholder="confirm it" autocomplete="off" spellcheck="false" data-bank-account></label></div>
+<p class="hx-hint">// a bank in any country (its own code, or the IBAN where that's the account number; the SWIFT/BIC for money from abroad) · fill in all of it or none of it · the number is stored encrypted, only its last 4 characters are shown · checked with the bank when bank verification is on</p>
+<p class="hx-eyebrow hx-gap-sm">// do you sell products?</p>
+<div class="hx-reg-row" role="radiogroup" aria-label="Does the company sell products?"><label class="hx-choice"><input type="radio" name="sells" value="true" data-sells><i class="fa-solid fa-box"></i><span>yes, we sell products</span><i class="fa-solid fa-check hx-check"></i></label>
+<label class="hx-choice"><input type="radio" name="sells" value="false" data-sells checked><i class="fa-solid fa-briefcase"></i><span>no (services, or not yet)</span><i class="fa-solid fa-check hx-check"></i></label></div>
+<div class="hx-shop-offer" data-shop-offer hidden>
+<label class="hx-choice hx-toggle"><input type="checkbox" name="open_shop" value="true" checked><i class="fa-solid fa-store"></i><span>open a shop on {{ app_name }}'s marketplace (prices in the salary currency)</span><i class="fa-solid fa-check hx-check"></i></label>
+<ul class="hx-meet-facts hx-gap-sm">
+<li><i class="fa-solid fa-chart-line"></i><span><b>competitor price tracking</b>: similar products on the marketplace and any competitor's page you add, priced daily, charted next to yours</span></li>
+<li><i class="fa-solid fa-chart-pie"></i><span><b>revenue tracking</b>: sales charts and pie charts (pandas, Chart.js), and a monthly Excel statement with every order's tax (with a matplotlib chart)</span></li>
+<li><i class="fa-solid fa-wand-magic-sparkles"></i><span><b>an AI that assigns tasks</b>: packing, restocking, replying to bad reviews, re-pricing, to your least busy staff in working hours; it also answers shoppers' questions and sums up reviews</span></li>
+<li><i class="fa-solid fa-truck-fast"></i><span><b>couriers + your own delivery</b>: Blue Dart, Delhivery, DTDC, India Post and more, or a custom courier; customers follow every step live and confirm delivery with a code</span></li>
+<li><i class="fa-solid fa-star"></i><span><b>photos, videos, reviews + ratings</b> from verified buyers</span></li>
+<li><i class="fa-solid fa-percent"></i><span>{{ app_name }} takes <b>{{ '%g'|format(commission|float) }}%</b> of every successful sale (delivered and paid), nothing else</span></li></ul></div>
+<button class="hx-btn" data-busy="creating…"><span>create company</span><i class="fa-solid fa-arrow-right"></i></button>
+</form>
+<p class="hx-alt">have a code instead? <a href="/companies/join">./join</a></p>
+</div>
+</section>{% endblock %}
+{% block modals %}{% from "_place_picker.html" import picker %}{# the location dialog: Geoapify search + map; "use this location" fills the form #}
+<div class="modal fade hx-modal" id="place-new" tabindex="-1" aria-labelledby="place-new-title" aria-hidden="true">
+<div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+<div class="modal-header hx-term-bar"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><h2 class="modal-title hx-term-title" id="place-new-title">~/companies/new/location</h2>
+<button type="button" class="hx-icon-btn hx-modal-x" data-mdb-dismiss="modal" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
+<div class="modal-body">{{ picker("loc-new", "place-new-picker", None, confirm=True) }}</div>
+<div class="modal-footer"><button type="button" class="hx-btn hx-btn-ghost" data-mdb-dismiss="modal"><span>cancel</span></button>
+{% if geoapify_key %}<button type="button" class="hx-btn hx-btn-solid" data-place-use="#place-new-picker" data-mdb-dismiss="modal"><span>use this location</span><i class="fa-solid fa-location-dot"></i></button>{% endif %}</div>
+</div></div></div>
+{% endblock %}

@@ -1,0 +1,81 @@
+{% extends "base.html" %}{% from "_avatar.html" import avatar %}
+{# routers/companies.py member_profile() (any member of the company): m (their membership here, company loaded), member (their account), profile (or None),
+   others (their other memberships, companies loaded; unlisted ones aren't named), positions, can_cv (owner/co-owner: CV download), ident + can_id (their identity proof: owner / co-owners / HR, or yourself),
+   assignable (positions you may give them; empty = you can't) #}
+{% block title %}{{ member.username }} · {{ m.company.name }}{% endblock %}
+{% block content %}<div class="hx-wide">
+{% set pos = positions[m.position] %}
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/workplaces/{{ m.company.name }}/members/{{ member.username }}</span><span class="hx-term-meta"><i class="fa-solid fa-user-group"></i> colleagues only</span></div>
+<div class="hx-term-body">
+<div class="hx-member-head">{{ avatar(member.id, member.username, 'hx-avatar-lg') }}
+<div><h1 class="hx-title"><span data-type>{{ member.username }}</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// {{ profile.headline if profile and profile.headline else 'no headline yet' }}</p></div></div>
+<div class="row g-3">
+<div class="col-sm-6 col-lg"><div class="hx-fact"><small>position here</small><b><i class="fa-solid {{ pos.icon }}"></i>{{ pos.label }}</b></div></div>
+<div class="col-sm-6 col-lg"><div class="hx-fact"><small>joined {{ m.company.name }}</small><b><i class="fa-solid fa-calendar-check"></i>{{ at(m.joined_at, '%d %b %Y') }}</b></div></div>
+<div class="col-sm-6 col-lg"><div class="hx-fact"><small>here for</small><b><i class="fa-solid fa-hourglass-half"></i>{{ m.joined_at|tenure }}</b></div></div>
+<div class="col-sm-6 col-lg"><div class="hx-fact"><small>age</small><b><i class="fa-solid fa-cake-candles"></i>{{ (member.dob|age ~ ' years') if member.dob else 'not given' }}</b></div></div>
+<div class="col-sm-6 col-lg"><div class="hx-fact"><small>experience</small><b><i class="fa-solid fa-briefcase"></i>{{ (profile.years ~ ' year' ~ ('' if profile.years == 1 else 's')) if profile and profile.years else 'not given' }}</b></div></div>
+</div>
+{% if can_contact %}<div class="hx-member-contact" aria-label="Contact details"><a href="mailto:{{ member.email }}?subject={{ ('[' ~ m.company.name ~ '] ')|urlencode }}" class="hx-btn hx-btn-sm"><i class="fa-solid fa-envelope"></i><span>{{ member.email }}</span></a>
+{% if member.phone %}<a href="tel:{{ member.phone }}" class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-phone"></i><span>{{ member.phone }}</span></a>{% endif %}
+<p class="hx-hint">// contact details: only {{ m.company.name }}'s owner, co-owners, managers and HR (and {{ member.username }}) see them</p></div>{% endif %}
+</div>
+</section>
+<section class="hx-section">
+<div class="row g-4">
+<div class="col-lg-7"><article class="hx-card hx-member-card">
+<p class="hx-eyebrow">// profile</p>
+{% if profile and (profile.bio or profile.skills or profile.headline) %}
+{% if profile.bio %}<p class="hx-about">{{ profile.bio }}</p>{% endif %}
+{% if profile.skills %}<div class="hx-chips hx-gap-sm">{% for s in profile.skills %}<span class="hx-pos"><i class="fa-solid fa-microchip"></i>{{ s }}</span>{% endfor %}</div>{% endif %}
+<p class="hx-hint hx-gap">// updated {{ at(profile.updated_at, '%d %b %Y') }}{% if profile.extracted_by %} · filled from their CV by {{ 'Claude' if profile.extracted_by == 'claude' else 'the local reader' }}{% endif %}</p>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-ghost"></i>{{ member.username }} hasn't filled in a profile yet.</p>{% endif %}
+{% if can_cv and profile and profile.resume_file %}<div class="hx-actions"><a href="/companies/{{ m.company_id }}/members/{{ member.id }}/cv" class="hx-btn" download><i class="fa-solid fa-file-pdf"></i><span>download CV</span></a></div>{% endif %}
+{% if can_id %}<p class="hx-eyebrow hx-gap">// identity proof (owner, co-owners and HR only)</p>
+{% if ident %}<div class="hx-pay-to hx-bank-saved"><i class="fa-solid fa-id-card"></i><div><small>{{ id_types[ident.id_type] }} · updated {{ ident.updated_at|tenure }} ago</small><b>{{ ident.name_on_id }}</b>
+<span>number ••••{{ ident.number_last4 }} · <a href="/identity/u/{{ member.id }}/photo" target="_blank" rel="noopener">view the photo</a></span></div></div>
+{% else %}<p class="hx-err-msg"><i class="fa-solid fa-id-card"></i> {{ member.username }} hasn't added an identity proof yet.</p>{% endif %}{% endif %}
+</article></div>
+<div class="col-lg-5"><article class="hx-card hx-member-card">
+<p class="hx-eyebrow">// workplaces</p>
+<table class="hx-table"><tbody>
+<tr><td><i class="fa-solid fa-building"></i> {{ m.company.name }} <small class="hx-here">(here)</small></td><td>{{ pos.label }} · since {{ at(m.joined_at, '%b %Y') }} ({{ m.joined_at|tenure }})</td></tr>
+{% for x in others %}<tr><td><i class="fa-solid fa-building"></i> {{ x.company.name if x.company.listed else 'a private company' }}</td><td>{{ positions[x.position].label }} · since {{ at(x.joined_at, '%b %Y') }} ({{ x.joined_at|tenure }})</td></tr>{% endfor %}
+</tbody></table>
+<p class="hx-hint hx-gap">// {{ 'only works here' if not others else (others|length) ~ ' other workplace' ~ ('' if others|length == 1 else 's') ~ '; private companies are not named' }} · on {{ app_name }} since {{ at(member.created_at, '%d %b %Y') }}</p>
+</article></div>
+</div>
+{% set rv = reviews %}<article class="hx-card hx-member-card hx-rv-card hx-gap" id="reviews">
+<p class="hx-eyebrow">// reviews at {{ m.company.name }} · <span class="hx-rv-like"><i class="fa-solid fa-thumbs-up"></i> {{ rv.likes }}</span> · <span class="hx-rv-dislike"><i class="fa-solid fa-thumbs-down"></i> {{ rv.dislikes }}</span></p>
+{% if not rv.self %}
+{% if rv.mine %}<p class="hx-ok-msg"><i class="fa-solid {{ 'fa-thumbs-up' if rv.mine.kind == 'like' else 'fa-thumbs-down' }}"></i> You {{ rv.mine.kind }}d {{ member.username }} {{ rv.mine.created_at|tenure }} ago: “{{ rv.mine.reason }}”</p>
+<form method="post" action="/reviews/{{ rv.mine.id }}/withdraw">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-rotate-left"></i><span>{{ 'unlike' if rv.mine.kind == 'like' else 'undislike' }}</span></button></form>
+<p class="hx-hint">// changed your mind? withdraw it (it can't be switched straight to the other). {{ ('You can review ' ~ member.username ~ ' ' ~ (rv.left) ~ ' more time' ~ ('' if rv.left == 1 else 's') ~ ' after that.') if rv.left else 'It was your last review of them.' }}</p>
+{% elif rv.left > 0 %}<form method="post" action="/companies/{{ m.company_id }}/members/{{ member.id }}/review" class="hx-form">{{ csrf_input(request) }}
+<div class="hx-review-pick" role="radiogroup" aria-label="Like or dislike">
+<label class="hx-choice hx-rv-like"><input type="radio" name="kind" value="like" required><i class="fa-solid fa-thumbs-up"></i><span>like</span><i class="fa-solid fa-check hx-check"></i></label>
+<label class="hx-choice hx-rv-dislike"><input type="radio" name="kind" value="dislike" required><i class="fa-solid fa-thumbs-down"></i><span>dislike</span><i class="fa-solid fa-check hx-check"></i></label></div>
+<label class="hx-field hx-area"><i class="fa-solid fa-comment"></i><span class="visually-hidden">Why (required)</span><textarea name="reason" rows="2" minlength="3" maxlength="500" placeholder="why? e.g. reviewed my code quickly and carefully" required></textarea></label>
+<button class="hx-btn" data-busy="posting…"><span>post review</span><i class="fa-solid fa-paper-plane"></i></button>
+<p class="hx-hint">// {{ member.username }} sees your reason but not your name; {{ m.company.name }}'s owner, co-owners, managers and HR see both. You can review them {{ rv.left }} more time{{ '' if rv.left == 1 else 's' }} (withdrawn ones count)</p></form>
+{% else %}<p class="hx-hint">// you've used both of your {{ rv.max }} reviews of {{ member.username }}</p>{% endif %}
+{% endif %}
+{% if rv.reasons %}<ul class="hx-rv-list">{% for x in rv.reasons %}<li><i class="fa-solid {{ 'fa-thumbs-up hx-rv-like' if x.r.kind == 'like' else 'fa-thumbs-down hx-rv-dislike' }}" aria-label="{{ x.r.kind }}"></i><span>“{{ x.r.reason }}”<small>{{ x.by if x.by else 'a colleague' }} · {{ x.r.created_at|tenure }} ago</small></span></li>{% endfor %}</ul>
+<p class="hx-hint">// {{ "what colleagues said about you: you don't see who" if rv.self else 'reasons with who wrote them: only the owner, co-owners, managers and HR see names' }}</p>
+{% elif rv.self %}<p class="hx-hint">// no reviews from colleagues yet</p>{% endif %}
+</article>
+<div class="hx-actions">
+<a href="/workplaces#c-{{ m.company_id }}" class="hx-btn hx-back"><i class="fa-solid fa-arrow-left"></i><span>back to {{ m.company.name }}</span></a>
+{% if assignable %}<form method="post" action="/companies/{{ m.company_id }}/members/{{ member.id }}/position" class="hx-promote">{{ csrf_input(request) }}
+<label class="visually-hidden" for="p-member">New position for {{ member.username }}</label>
+<select name="position" id="p-member" class="hx-select" required><option value="" selected disabled>set position…</option>{% for key in assignable %}<option value="{{ key }}">{{ positions[key].label }}</option>{% endfor %}</select>
+<button class="hx-icon-btn" aria-label="Apply position for {{ member.username }}" title="Apply"><i class="fa-solid fa-arrow-up-right-dots"></i></button></form>{% endif %}
+</div>
+{% if can_remove %}<details class="hx-inline-details hx-gap"><summary class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-user-minus"></i><span>remove {{ member.username }} from {{ m.company.name }}</span></summary>
+<form method="post" action="/companies/{{ m.company_id }}/members/{{ member.id }}/remove" class="hx-form hx-gap-sm">{{ csrf_input(request) }}<label class="hx-field"><i class="fa-solid fa-comment"></i><span class="visually-hidden">Why (optional)</span><input name="reason" maxlength="300" placeholder="why (optional: they're told)"></label>
+<p class="hx-hint">// only once every salary due to them is paid, the current cycle too. They're told by notification and email, and their payslips stay on their statement</p>
+<button class="hx-btn hx-btn-sm hx-btn-danger" data-busy="checking…"><span>remove them</span><i class="fa-solid fa-user-minus"></i></button></form></details>{% endif %}
+</section>
+</div>{% endblock %}

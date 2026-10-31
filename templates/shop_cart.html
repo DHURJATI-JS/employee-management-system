@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{# routers/shop.py cart_page(): groups [{c, s, lines [{ci, p, problem}], subtotal, shipping}] (one per shop: each becomes its own order), ok (can check out), pay #}
+{% block title %}Cart{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/shop/cart</span><span class="hx-term-meta"><i class="fa-solid fa-cart-shopping"></i> {{ groups|map(attribute='lines')|map('length')|sum }} item{{ '' if groups|map(attribute='lines')|map('length')|sum == 1 else 's' }}</span></div>
+<div class="hx-term-body"><h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>cat cart</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// each shop sends its part as its own order, with its own shipping · <a href="/shop">keep shopping</a></p></div>
+</section>
+{% if groups %}{% for g in groups %}<section class="hx-section hx-cart-shop">
+<p class="hx-eyebrow">// from {{ g.c.name }}</p>
+<div class="hx-card hx-cart">{% for l in g.lines %}{% set p = l.p %}<div class="hx-cart-line{{ ' hx-cart-bad' if l.problem }}">
+<a href="/shop/p/{{ p.id }}" class="hx-cart-img">{% if product_cover(p.id) %}<img src="{{ product_cover(p.id) }}" alt="" width="72" height="72" loading="lazy">{% else %}<i class="fa-solid fa-box-open"></i>{% endif %}</a>
+<div class="hx-cart-info"><a href="/shop/p/{{ p.id }}"><b>{{ p.title }}</b></a><span>{{ price(p.currency or (g.s.currency if g.s else 'INR'), p.price_minor) }} each{% if g.s and p.currency and p.currency != g.s.currency %} <small>= {{ price_plain(g.s.currency, l.unit) }} at today's rate</small>{% endif %}</span>{% if l.problem %}<span class="hx-err-msg"><i class="fa-solid fa-triangle-exclamation"></i> {{ l.problem }}</span>{% endif %}</div>
+<form method="post" action="/shop/cart/{{ p.id }}" class="hx-cart-qty">{{ csrf_input(request) }}<input type="hidden" name="product_id" value="{{ p.id }}"><label class="visually-hidden" for="q-{{ p.id }}">Quantity</label>
+<select id="q-{{ p.id }}" name="qty" class="hx-select" data-autosubmit>{% for n in range(1, [[p.stock, 1]|max, p.max_per_order]|min + 1) %}<option value="{{ n }}"{{ ' selected' if n == l.ci.qty }}>{{ n }}</option>{% endfor %}</select>
+<button class="hx-icon-btn" name="qty" value="0" aria-label="Remove {{ p.title }}" title="remove"><i class="fa-solid fa-trash"></i></button></form>
+<b class="hx-cart-sum">{{ price(g.s.currency if g.s else 'INR', l.unit * l.ci.qty) }}</b></div>{% endfor %}
+<div class="hx-cart-total"><span>items {{ price(g.s.currency if g.s else 'INR', g.subtotal) }} · shipping {{ 'free' if not g.shipping else price(g.s.currency, g.shipping)|striptags }}</span><b>{{ price(g.s.currency if g.s else 'INR', g.subtotal + g.shipping) }}</b></div></div>
+</section>{% endfor %}
+<section class="hx-section hx-row-actions"><a href="/shop/checkout" class="hx-btn hx-btn-solid{{ ' hx-disabled' if not ok }}"{{ ' aria-disabled="true"'|safe if not ok }}><span>{{ 'check out' if ok else 'fix the items marked above first' }}</span><i class="fa-solid fa-arrow-right"></i></a>
+{% if pay == 'test' %}<span class="hx-hint hx-test-mode"><i class="fa-solid fa-flask"></i> test mode: no money moves</span>{% endif %}</section>
+{% else %}<section class="hx-section"><p class="hx-empty"><i class="fa-solid fa-cart-shopping"></i><span>Your cart is empty. <a href="/shop">Find something →</a></span></p></section>{% endif %}
+</div>{% endblock %}

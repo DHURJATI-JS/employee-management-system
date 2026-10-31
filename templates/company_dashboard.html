@@ -1,0 +1,316 @@
+{% extends "base.html" %}{% from "_bank_fields.html" import bank_codes %}{% from "_avatar.html" import avatar, logo %}{% from "_payout.html" import payout_row, deposit_row with context %}{% from "_pay_rules.html" import rules_box %}{% from "_terms.html" import terms_box, accept_box %}{% from "_completion.html" import completion_card %}
+{# routers/payroll.py company_dashboard(): c (members + salaries loaded), me, members (by rank), ledger (you're owner / co-owner / manager / HR), payouts (the
+   company's, or only yours), totals, pay = payroll.pay_rows, att = payroll.attendance (monitored members; only you unless ledger), banks + accounts (ledger
+   only), status (user id -> active / idle / offline / untracked, live-updated by app.js over /ws/presence), may_pay(member), hours, tz, working_now #}
+{% block title %}{{ c.name }} · dashboard{% endblock %}
+{% block content %}{% set says = {'active': 'online', 'idle': 'idle', 'offline': 'offline', 'untracked': 'not monitored'} %}<div class="hx-wide" data-watch-company="{{ c.id }}">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/companies/{{ c.name }}/dashboard</span><span class="hx-term-meta"><i class="fa-solid fa-satellite-dish"></i> live</span></div>
+<div class="hx-term-body">
+<div class="hx-dlg-head">{{ logo(c, 'fa-building', 'hx-logo-lg') }}<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>./dashboard {{ c.name }}</span><span class="hx-cursor" aria-hidden="true">_</span></h1></div>
+{% set cap = c.max_members if positions[me.position].top else none %}<p class="hx-sub">// you're {{ positions[me.position].label }} · {{ members|length }}{{ ' of ' ~ cap if cap }} member{{ '' if members|length == 1 and not cap else 's' }} · working hours {{ hours }} ({{ tz }}){{ your_hours(c) }} ·<b class="{{ 'hx-on-hours' if working_now else 'hx-off-hours' }}">{{ 'working hours now' if working_now else 'outside working hours' }}</b></p>
+<div class="hx-row-actions"><a href="/workplaces#c-{{ c.id }}" class="hx-btn hx-btn-sm"><i class="fa-solid fa-briefcase"></i><span>company details</span></a>
+<a href="/chats#co-{{ c.id }}" class="hx-btn hx-btn-sm"><i class="fa-solid fa-comments"></i><span>chats{{ ' · ' ~ chat_unread ~ ' new' if chat_unread }}</span></a>
+<a href="/companies/{{ c.id }}/tasks" class="hx-btn hx-btn-sm"><i class="fa-solid fa-list-check"></i><span>{{ 'give tasks' if me.position in ('owner', 'co_owner', 'manager', 'hr') else 'tasks' }}{{ ' · ' ~ tasks_open ~ ' to do' if tasks_open }}</span></a>
+{% if ledger or monitored(me.position) %}<a href="/companies/{{ c.id }}/attendance" class="hx-btn hx-btn-sm"><i class="fa-solid fa-user-clock"></i><span>attendance</span></a>{% endif %}
+<a href="/companies/{{ c.id }}/tasks#{{ 'meet-new' if me.position in ('owner', 'co_owner', 'manager', 'hr') else 'meetings' }}" class="hx-btn hx-btn-sm"><i class="fa-solid fa-video"></i><span>{{ 'new meeting' if me.position in ('owner', 'co_owner', 'manager', 'hr') else 'meetings' }}</span></a>
+{% if me.position in ('owner', 'co_owner', 'manager', 'hr') %}<a href="/companies/{{ c.id }}/shop" class="hx-btn hx-btn-sm"><i class="fa-solid fa-store"></i><span>shop</span></a>{% endif %}{# HR: its numbers only (seller.py SHOP_MONEY) #}
+{% if ledger %}<a href="#statement" class="hx-btn hx-btn-sm"><i class="fa-solid fa-receipt"></i><span>transaction statement</span></a>{% endif %}
+<a href="/statements" class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-wallet"></i><span>my statement</span></a></div>
+{% if coai %}<div class="hx-ai-row" role="group" aria-label="Company AI"><span class="hx-ai-row-label"><i class="fa-solid fa-robot" aria-hidden="true"></i>company AI</span>
+{% if top %}<a href="/companies/{{ c.id }}/grow" class="hx-btn hx-btn-sm hx-btn-solid"><i class="fa-solid fa-seedling"></i><span>grow company</span></a>{% endif %}{# owner + co-owners: routers/grow.py #}
+<a href="#ai" class="hx-btn hx-btn-sm hx-btn-solid"><i class="fa-solid fa-ranking-star"></i><span>{% if c.ai_promotions == 'auto' %}auto promotion: on{% elif c.ai_promotions == 'suggest' %}auto promotion: suggests only{% else %}auto promotion: off{% endif %}</span></a>
+<a href="/companies/{{ c.id }}/tasks?ai=1#give" class="hx-btn hx-btn-sm hx-btn-solid"><i class="fa-solid fa-wand-magic-sparkles"></i><span>auto task assignment</span></a></div>{% endif %}
+</div>
+</section>
+{% if c.halted_at %}<div class="hx-guard hx-guard-halt" role="alert"><i class="fa-solid fa-hand"></i><div><b>Operations halted since {{ halted_since }} · payroll guard</b>
+<span>{{ c.name }}'s employee liability has been over its net worth since {{ since }}. Until it pays its employees or adds funds it can't take on people, make offers, change positions, pay its owners or be deleted, and attendance isn't tracked. Every employee has been alerted.{% if top %} Pay the staff below, or deposit funds, to resume.{% endif %}</span></div></div>
+{% elif c.liability_since and ledger %}<div class="hx-guard" role="alert"><i class="fa-solid fa-triangle-exclamation"></i><div><b>Payroll guard warning · {{ since }}</b>
+{% set wcur = worth_cur(c) %}<span>Employee liability ({{ money(c.salary_currency, held) }}{% if wcur != c.salary_currency %} ≈ {{ money(wcur, convert(held, c.salary_currency, wcur)) }}{% endif %}) is more than the net worth ({{ money(wcur, c.net_worth) }}). Pay your employees or add funds before <b>{{ deadline }}</b>, or all operations halt to protect them and every employee is alerted.</span></div></div>{% endif %}
+{% if done %}<div class="hx-gap" id="setup">{{ completion_card(done, "~/companies/" ~ c.name ~ "/setup", c.name ~ "'s setup") }}</div>{% endif %}
+<section class="hx-section">
+<div class="row g-4">
+<div class="{{ 'col-xl-5' if ledger else 'col-lg-7' }}">
+<p class="hx-eyebrow">// team · live</p>
+<ul class="hx-team">
+{% for m in members %}{% set st = status[m.user_id] %}{% set a = att.get(m.user_id) %}
+<li class="hx-team-row">{{ avatar(m.user_id, m.user.username, 'hx-avatar-sm') }}
+<span class="hx-team-who"><a href="/companies/{{ c.id }}/members/{{ m.user_id }}">{{ m.user.username }}</a>{% if m.user_id == me.user_id %} <small>(you)</small>{% endif %}<small>{{ positions[m.position].label }}{% set r = rv.get(m.user_id) %}{% if r %} · <a href="/companies/{{ c.id }}/members/{{ m.user_id }}#reviews" class="hx-rv-count" title="likes · dislikes from colleagues"><i class="fa-solid fa-thumbs-up"></i>{{ r[0] }} <i class="fa-solid fa-thumbs-down"></i>{{ r[1] }}</a>{% endif %}</small></span>
+{% if a %}<span class="hx-team-att" title="active in working hours"><b>{{ hm(a.today) }}</b><small>today · {{ a.days }}/{{ a.workdays }} days this cycle</small></span>{% endif %}
+<span class="hx-presence" data-presence-user="{{ m.user_id }}" data-status="{{ st }}"><i aria-hidden="true"></i><span>{{ says[st] }}</span></span>
+{% if m.user_id != me.user_id %}<form method="post" action="/chats/direct" class="hx-team-chat">{{ csrf_input(request) }}<input type="hidden" name="company_id" value="{{ c.id }}"><input type="hidden" name="user_id" value="{{ m.user_id }}"><button class="hx-icon-btn" aria-label="Chat with {{ m.user.username }}" title="Chat with {{ m.user.username }}"><i class="fa-solid fa-comment"></i></button></form>{% endif %}</li>{% endfor %}
+</ul>
+<p class="hx-hint"><i class="fa-solid fa-comments"></i> chat with anyone here, or start a group, on <a href="/chats#co-{{ c.id }}">chats</a> · the owner, co-owners, managers and HR can read every chat in {{ c.name }}</p>
+<p class="hx-hint">// online = {{ app_name }} open and in use; idle = open but untouched for 5 minutes, or in a background tab. Attendance counts active time inside working hours only, never for owners, co-owners or freelancers{% if not ledger %}; colleagues' attendance is only shown to the owner, co-owners, managers and HR{% endif %}</p>
+<p class="hx-eyebrow hx-gap" id="contacts">// contacts · {{ "everyone's email + phone (you're one of the owner, co-owners, managers and HR: only they see this list)" if lead else 'write to them' }}</p>
+<ul class="hx-contacts">{% for m in contacts %}<li><span class="hx-contact-who"><b>{{ m.user.username }}{% if m.user_id == me.user_id %} <small>(you)</small>{% endif %}</b><small>{{ positions[m.position].label }}</small></span>
+<a href="mailto:{{ m.user.email }}?subject={{ ('[' ~ c.name ~ '] ')|urlencode }}" class="hx-btn hx-btn-sm" title="Email {{ m.user.username }}"><i class="fa-solid fa-envelope"></i><span>{{ m.user.email }}</span></a>
+{% if lead and m.user.phone %}<a href="tel:{{ m.user.phone }}" class="hx-btn hx-btn-sm hx-btn-ghost" title="Call {{ m.user.username }}"><i class="fa-solid fa-phone"></i><span>{{ m.user.phone }}</span></a>{% endif %}</li>{% endfor %}</ul>
+</div>
+{% if ledger %}{% set cur = c.salary_currency %}{% set wcur = worth_cur(c) %}{% set ready = cbank and c.net_worth is not none and cur %}<div class="col-xl-7">
+<p class="hx-eyebrow" id="finance">// company account &amp; net worth</p>
+<div class="hx-finance">
+<div><small>company account (salaries are paid from it)</small>{% if cbank %}<b>{{ cbank.bank_name }} ••••{{ cbank.account_last4 }}</b><span>{{ cbank.holder_name }} · {{ bank_line(cbank) }}</span>
+<span>{{ ('verified with the bank: ' ~ cbank.verified_name) if cbank.verified_at else ('not verified: save it again to check it' if bank_verify else 'not verified (bank verification is off)') }}</span>{% else %}<b class="hx-missing">not set</b><span>no payment can be recorded until it is</span>{% endif %}</div>
+<div><small>identity proof</small>{% if c.id_proof_at %}<b>{{ company_proofs[c.id_proof_type] }}</b><span>uploaded {{ c.id_proof_at|tenure }} ago · <a href="/identity/c/{{ c.id }}/photo" target="_blank" rel="noopener">view the photo</a></span>
+{% else %}<b class="hx-missing">not uploaded</b><span>salaries can't be paid until it is</span>{% endif %}</div>
+<div><small>net worth</small><b>{{ money(wcur, c.net_worth) if c.net_worth is not none and wcur else 'not set' }}</b>{% if c.net_worth is not none and cur and wcur != cur %}<span>≈ {{ money(cur, convert(c.net_worth, wcur, cur)) }} in the salaries' currency</span>{% endif %}<span>{{ ('set by ' ~ c.net_worth_by ~ ', ' ~ c.net_worth_updated_at|tenure ~ ' ago · each payout takes its gross off it, each deposit adds to it') if c.net_worth_updated_at else 'payments are blocked until it is set' }}</span>
+{% if not c.net_worth %}<span class="hx-err">nobody new can join (or be offered a job) until it's above 0: deposit funds</span>{% endif %}</div>
+<div><small>employee liability</small><b class="{{ 'hx-err' if c.net_worth is not none and cur and convert(held, cur, wcur) > c.net_worth }}">{{ money(cur, held) if cur else '—' }}</b>{% if cur and wcur != cur %}<span>≈ {{ money(wcur, convert(held, cur, wcur)) }}: the guard compares in {{ wcur }}</span>{% endif %}<span>unpaid working hours: finished cycles in full + this cycle so far</span></div>
+<div><small>clearance · what the owner can take now</small><b>{{ money(cur, [pay[c.owner_id].max, 0]|max) if c.net_worth is not none and cur and c.owner_id in pay else '—' }}</b><span>net worth − what everyone else's working hours are owed</span></div>
+</div>
+{% if cur and wcur and wcur != cur %}<p class="hx-hint"><i class="fa-solid fa-arrow-right-arrow-left"></i> {{ rate_line(cur, wcur) }} · salaries are in {{ cur }}, the net worth in {{ wcur }}: every comparison and payout is converted</p>{% endif %}
+{% if top %}<div class="hx-row-actions hx-gap-sm"><button type="button" class="hx-btn hx-btn-sm" data-mdb-modal-init data-mdb-target="#co-bank"><i class="fa-solid fa-building-columns"></i><span>{{ 'change' if cbank else 'add' }} company account</span></button>
+{% if cbank and cur %}<button type="button" class="hx-btn hx-btn-sm hx-btn-solid" data-mdb-modal-init data-mdb-target="#co-deposit"><i class="fa-solid fa-piggy-bank"></i><span>deposit funds</span></button>{% endif %}
+<button type="button" class="hx-btn hx-btn-sm" data-mdb-modal-init data-mdb-target="#co-worth"><i class="fa-solid fa-scale-balanced"></i><span>{{ 'update' if c.net_worth is not none else 'set' }} net worth</span></button>
+<button type="button" class="hx-btn hx-btn-sm" data-mdb-modal-init data-mdb-target="#co-proof"><i class="fa-solid fa-file-shield"></i><span>{{ 'replace' if c.id_proof_at else 'upload' }} identity proof</span></button></div>
+{% if not cbank %}<p class="hx-hint">// add the company account to deposit funds into it</p>{% endif %}
+{% else %}<p class="hx-hint">// only the owner and co-owners can change the company account or the net worth, or deposit funds</p>{% endif %}
+</div>
+<div class="col-12">
+<p class="hx-eyebrow">// payroll · paid {{ cycle_every }} from the day each person joined</p>
+{% if not cur %}<p class="hx-err-msg"><i class="fa-solid fa-money-bill-wave"></i> Set {{ c.name }}'s minimum salaries first (company details → edit): every payment is checked against them, whatever currency it's sent in.</p>{% endif %}
+<div class="hx-table-wrap"><table class="hx-table hx-payroll"><thead><tr><th>member</th><th>this cycle</th><th>status</th><th>owed</th><th>bank</th><th><span class="visually-hidden">pay</span></th></tr></thead><tbody>
+{% for m in members %}{% set r = pay[m.user_id] %}{% set b = banks.get(m.user_id) %}
+<tr><td><b>{{ m.user.username }}</b><small>{{ positions[m.position].label }}{% if r.suggest %} · {{ money(c.salary_currency, r.suggest) }} / cycle{% endif %}</small></td>
+<td>cycle {{ r.cycle }}<small>{{ r.dates[0].strftime('%d %b') }} – {{ r.dates[1].strftime('%d %b %Y') }}</small></td>
+<td>{% if r.overdue %}<span class="hx-due hx-due-late"><i class="fa-solid fa-triangle-exclamation"></i>{{ r.overdue }} overdue</span>{% elif r.due %}<span class="hx-due"><i class="fa-solid fa-hourglass-half"></i>due {{ (r.dates[1]).strftime('%d %b') }}</span>{% else %}<span class="hx-due hx-due-ok"><i class="fa-solid fa-check"></i>paid</span>{% endif %}</td>
+<td>{{ money(cur, r.owed) if cur and r.owed else '—' }}</td>
+<td>{% if b %}<span class="hx-bank-ok"><i class="fa-solid fa-building-columns"></i>{{ b.bank_name|truncate(18) }} ••{{ b.account_last4 }}</span>{% else %}<span class="hx-missing">no bank details</span>{% endif %}</td>
+<td>{% if not may_pay(m) %}<span class="hx-hint" title="HR can't record their own salary">owner / manager pays</span>
+{% elif c.halted_at and m.position in ('owner', 'co_owner') %}<span class="hx-hint" title="Operations are halted">halted</span>
+{% elif b and r.due and ready %}<button type="button" class="hx-btn hx-btn-sm hx-btn-solid" data-mdb-modal-init data-mdb-target="#payto-{{ m.user_id }}"><i class="fa-solid fa-money-bill-transfer"></i><span>pay</span></button>{% endif %}</td></tr>
+{% endfor %}</tbody></table></div>
+<p class="hx-hint">// owners, co-owners and managers can record their own salary too; HR records everyone else's. Every payment needs the amounts, the account, the transfer's date + reference and a screenshot, and can't be more than that cycle's salary or the clearance (net worth − what the others are owed). A new position or salary is paid from the person's next cycle{% if not ready and cur %}. Add the company account and its net worth above to start paying{% endif %}</p>
+</div>
+{% else %}{% set r = pay[me.user_id] %}<div class="col-lg-5">
+<p class="hx-eyebrow">// your pay here</p>
+<article class="hx-card hx-mypay"><span class="hx-icon"><i class="fa-solid fa-wallet"></i></span>
+<h2>cycle {{ r.cycle }}</h2><p>{{ r.dates[0].strftime('%d %b') }} – {{ r.dates[1].strftime('%d %b %Y') }}{% if r.suggest %} · {{ money(c.salary_currency, r.suggest) }} per cycle{% endif %}</p>
+<p class="hx-hint">// paid {{ cycle_every }} from the day you joined ({{ at(me.joined_at, '%d %b %Y') }}). {{ 'Your attendance is tracked while you use ' ~ app_name ~ ' in working hours.' if monitored(me.position) else "You're not monitored here." }}</p>
+{% if payouts %}<ul class="hx-mypay-list">{% for p in payouts[:6] %}<li><a href="/statements#pay-{{ p.id }}">cycle {{ p.cycle }} · {{ money(p.currency, p.net) }}</a><small>{{ at(p.transferred_at, '%d %b %Y') }}</small></li>{% endfor %}</ul>{% endif %}
+<a href="/statements" class="hx-btn hx-btn-sm"><i class="fa-solid fa-receipt"></i><span>open my statement</span></a></article>
+</div>{% endif %}
+</div>
+</section>
+<section class="hx-section" id="requests">
+<p class="hx-eyebrow">// joining: approved by the owner, a co-owner, a manager or HR · leaving: by the owner, a co-owner or a manager above them, only once every salary due is paid</p>
+{% set mine = reqs|selectattr('user_id', 'equalto', me.user_id)|list %}
+{% if me.position != 'owner' %}{% if mine %}{% for r in mine %}<div class="hx-req-mine"><p class="hx-ok-msg"><i class="fa-solid fa-hourglass-half"></i> You asked to leave {{ c.name }} {{ r.created_at|tenure }} ago: waiting for someone above you. It's approved once every salary due to you is paid{% if owing.get(me.user_id) %} (still due: cycle {{ owing[me.user_id]|map('first')|join(', ') }}){% endif %}.</p>
+<form method="post" action="/member-requests/{{ r.id }}/cancel">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-rotate-left"></i><span>stay: withdraw it</span></button></form></div>{% endfor %}
+{% else %}<form method="post" action="/companies/{{ c.id }}/leave" class="hx-req-mine">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-door-open"></i><span>ask to leave {{ c.name }}</span></button>
+<span class="hx-hint">// someone above you approves it once every salary due to you is paid</span></form>{% endif %}{% endif %}
+{% if approver %}{% set others = reqs|rejectattr('user_id', 'equalto', me.user_id)|list %}
+{% if others %}<div class="hx-tx-list hx-gap-sm">{% for r in others %}{% set u = r.user %}
+<details class="hx-tx hx-req" id="req-{{ r.id }}"><summary><span class="hx-tx-icon" aria-hidden="true"><i class="fa-solid {{ 'fa-user-plus' if r.kind == 'join' else 'fa-door-open' }}"></i></span>
+<span class="hx-tx-main"><b>{{ u.username }} wants to {{ ('join as ' ~ positions[r.position].label) if r.kind == 'join' else 'leave' }}</b><small>asked {{ r.created_at|tenure }} ago{% if r.note %} · “{{ r.note }}”{% endif %}</small></span>
+<span class="hx-new">{{ 'join' if r.kind == 'join' else 'leave' }}</span><i class="fa-solid fa-chevron-down hx-tx-chev" aria-hidden="true"></i></summary>
+<div class="hx-tx-body">
+{% if r.kind == 'join' %}{% set p = profiles.get(r.user_id) %}{% set i = idents.get(r.user_id) %}{% set b = abanks.get(r.user_id) %}
+<dl class="hx-slip">
+<dt>Account</dt><dd>{{ u.username }} · <a href="mailto:{{ u.email }}">{{ u.email }}</a>{% if u.phone %} · {{ u.phone }}{% endif %}{% if u.dob %} · age {{ u.dob|age }}{% endif %} · on {{ app_name }} since {{ at(u.created_at, '%b %Y') }}</dd>
+<dt>Profile</dt><dd>{% if p %}{{ p.headline or 'no headline' }}{% if p.years is not none %} · {{ p.years }} years' experience{% endif %}{% else %}no profile yet{% endif %}</dd>
+<dt>Skills</dt><dd>{{ p.skills|join(', ') if p and p.skills else 'none listed' }}</dd>
+{% if p and p.bio %}<dt>About</dt><dd>{{ p.bio|truncate(400) }}</dd>{% endif %}
+{% if p and p.wants() %}<dt>Salary wanted</dt><dd>{{ p.wants() }}</dd>{% endif %}
+<dt>Identity proof</dt><dd>{% if i %}{{ id_types[i.id_type] }} ••••{{ i.number_last4 }} · name on it: {{ i.name_on_id }} · {{ ('verified online: ' ~ i.verified_name) if i.verified_at else 'format and check digit checked' }} · <a href="/identity/u/{{ r.user_id }}/photo" target="_blank" rel="noopener">view the photo</a>{% else %}<span class="hx-missing">missing</span>{% endif %}</dd>
+<dt>Bank details</dt><dd>{% if b %}{{ bank_line(b) }} · holder {{ b.holder_name }} · {{ ('verified with the bank: ' ~ b.verified_name) if b.verified_at else 'not verified with the bank' }}{% else %}<span class="hx-missing">missing</span>{% endif %}</dd>
+<dt>Other workplaces</dt><dd>{{ elsewhere.get(r.user_id, [])|join(', ') or 'none listed publicly' }}</dd>
+<dt>Terms</dt><dd>{% if r.terms_version == c.terms_version %}<span class="hx-ok">accepted version {{ r.terms_version }}{% if r.terms_accepted_at %} · {{ r.terms_accepted_at|tenure }} ago{% endif %}</span>{% else %}<span class="hx-missing">accepted {{ ('version ' ~ r.terms_version) if r.terms_version else 'no version' }}; the current one is {{ c.terms_version }}: they've been asked to accept it before anyone can approve</span>{% endif %}</dd>
+</dl>
+{% else %}{% set m = by_id.get(r.user_id) %}
+<dl class="hx-slip"><dt>Member</dt><dd>{{ u.username }} · {{ positions[m.position].label if m else '' }}{% if m %} · joined {{ at(m.joined_at, '%d %b %Y') }} ({{ m.joined_at|tenure }}){% endif %} · <a href="mailto:{{ u.email }}">{{ u.email }}</a></dd>
+<dt>Salary</dt><dd>{% if owing.get(r.user_id) %}<span class="hx-missing">still due: {% for k, amt in owing[r.user_id] %}cycle {{ k }} ({{ money(c.salary_currency, amt) }} calculated){{ ', ' if not loop.last }}{% endfor %}</span>: pay it from the payroll above, then approve{% else %}<span class="hx-ok">settled: nothing due up to today</span>{% endif %}</dd></dl>{% endif %}
+{% if r.kind == 'join' or can_exit(r) %}<div class="hx-row-actions hx-gap-sm">{% for d, icon in (('approve', 'fa-check'), ('decline', 'fa-xmark')) if not (d == 'approve' and r.kind == 'join' and r.terms_version != c.terms_version) %}<form method="post" action="/member-requests/{{ r.id }}/decide">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm{{ ' hx-btn-solid' if d == 'approve' else ' hx-btn-ghost' }}" name="decision" value="{{ d }}"><i class="fa-solid {{ icon }}"></i><span>{{ d }}</span></button></form>{% endfor %}</div>
+{% else %}<p class="hx-hint">// leaving is decided by the owner, a co-owner or a manager above {{ u.username }}{{ ', not HR' if me.position == 'hr' }}</p>{% endif %}
+</div></details>{% endfor %}</div>
+{% else %}<p class="hx-empty hx-gap-sm"><i class="fa-solid fa-user-check"></i><span>Nobody is waiting to join or leave.</span></p>{% endif %}{% endif %}
+</section>
+<section class="hx-section" id="leave">
+<p class="hx-eyebrow">// leave · approved by someone above you (owner, co-owner or manager) · unpaid: its working days come off that cycle's salary</p>
+<div class="row g-4">
+{% if me.position != 'owner' %}<div class="col-lg-5"><article class="hx-card hx-leave-form"><h2><i class="fa-solid fa-umbrella-beach"></i> request leave</h2>
+<form method="post" action="/companies/{{ c.id }}/leave-requests" class="hx-form">{{ csrf_input(request) }}
+<div class="hx-reg-row"><label class="hx-field"><i class="fa-solid fa-calendar-day"></i><span class="visually-hidden">First day of leave</span><span class="hx-pfx" aria-hidden="true">from</span><input type="date" name="start_day" value="{{ today.isoformat() }}" required></label>
+<label class="hx-field"><i class="fa-solid fa-calendar-check"></i><span class="visually-hidden">Last day of leave</span><span class="hx-pfx" aria-hidden="true">to</span><input type="date" name="end_day" value="{{ today.isoformat() }}" required></label></div>
+<label class="hx-field hx-area"><i class="fa-solid fa-comment"></i><span class="visually-hidden">Reason (optional)</span><textarea name="reason" rows="2" maxlength="500" placeholder="reason (optional)"></textarea></label>
+<button class="hx-btn" data-busy="sending…"><span>ask for leave</span><i class="fa-solid fa-paper-plane"></i></button></form></article></div>{% endif %}
+<div class="{{ 'col-lg-7' if me.position != 'owner' else 'col-12' }}">
+{% if leaves %}<ul class="hx-leave-list">{% for l in leaves %}{% set days = leave_days(l) %}
+<li class="hx-leave hx-leave-{{ l.status }}"><span class="hx-leave-main"><b>{{ 'you' if l.user_id == me.user_id else l.user.username }} · {{ span(l) }}</b>
+<small>{{ days }} working day{{ '' if days == 1 else 's' }}{% if l.reason %} · {{ l.reason }}{% endif %}{% if l.decided_by %} · {{ l.status }} by {{ l.decided_by }}{% endif %}</small></span>
+<span class="hx-leave-status">{{ l.status }}</span>
+{% if l.status == 'pending' and can_decide(l) %}<span class="hx-row-actions">{% for d, icon in (('approve', 'fa-check'), ('decline', 'fa-xmark')) %}<form method="post" action="/leave/{{ l.id }}/decide">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm{{ ' hx-btn-solid' if d == 'approve' else ' hx-btn-ghost' }}" name="decision" value="{{ d }}"><i class="fa-solid {{ icon }}"></i><span>{{ d }}</span></button></form>{% endfor %}</span>
+{% elif l.status == 'pending' and l.user_id == me.user_id %}<form method="post" action="/leave/{{ l.id }}/cancel">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><span>cancel</span></button></form>{% endif %}</li>{% endfor %}</ul>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-umbrella-beach"></i><span>No leave requests yet.</span></p>{% endif %}
+</div></div>
+</section>
+<section class="hx-section" id="terms">
+<p class="hx-eyebrow">// terms and conditions · accepted by everyone before joining{% if top %} · <a href="/workplaces#edit-{{ c.id }}" class="hx-eyebrow-link">edit them →</a>{% endif %}</p>
+<div class="row g-4"><div class="col-lg-7">{{ terms_box(c, standard_terms) }}</div>
+<div class="col-lg-5">
+{% if me.terms_version == c.terms_version %}<p class="hx-ok-msg"><i class="fa-solid fa-file-signature"></i> You accepted version {{ c.terms_version }}{% if me.terms_accepted_at %} {{ me.terms_accepted_at|tenure }} ago{% endif %}.</p>
+{% else %}<p class="hx-err-msg"><i class="fa-solid fa-file-signature"></i> {{ ('The terms changed since you accepted version ' ~ me.terms_version) if me.terms_version else ("You haven't accepted " ~ c.name ~ "'s terms yet (you joined before there were any)") }}: read them and accept version {{ c.terms_version }}.</p>
+<form method="post" action="/companies/{{ c.id }}/terms/accept" class="hx-form">{{ csrf_input(request) }}{{ accept_box(c) }}<button class="hx-btn hx-btn-solid" data-busy="saving…"><span>accept the terms</span><i class="fa-solid fa-file-signature"></i></button></form>{% endif %}
+{% if top %}{% set behind = members|rejectattr('terms_version', 'equalto', c.terms_version)|list %}
+<p class="hx-hint">// {{ members|length - behind|length }} of {{ members|length }} member{{ '' if members|length == 1 else 's' }} accepted the current version{% if behind %}; not yet: {{ behind|map(attribute='user.username')|join(', ') }}{% endif %}. When you change the terms, everyone is asked to accept the new version</p>{% endif %}
+</div></div>
+</section>
+{% if me.position in ('owner', 'co_owner') %}<section class="hx-section" id="danger">
+<p class="hx-eyebrow">// hand {{ c.name }} over · only to a co-owner, who has to accept · the owner stays on as a co-owner</p>
+<article class="hx-card hx-danger-card hx-gap-sm">
+{% if offer %}{% set to = by_id.get(offer.to_user_id) %}
+{% if offer.to_user_id == me.user_id %}<p><i class="fa-solid fa-crown"></i> <b>{{ offer.by_name }}</b> is offering you {{ c.name }}. If you accept you become its owner, with everything that comes with it (its people's pay first), and {{ offer.by_name }} stays on as a co-owner.</p>
+<form method="post" action="/companies/{{ c.id }}/transfer/answer" class="hx-form">{{ csrf_input(request) }}<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Your password, to accept</span><span class="hx-pfx" aria-hidden="true">your password:</span><input name="password" type="password" autocomplete="current-password"></label>
+<div class="hx-row-actions"><button class="hx-btn hx-btn-sm hx-btn-solid" name="decision" value="accept"><i class="fa-solid fa-check"></i><span>accept: it's mine</span></button><button class="hx-btn hx-btn-sm hx-btn-ghost" name="decision" value="decline"><i class="fa-solid fa-xmark"></i><span>decline</span></button></div></form>
+{% elif me.position == 'owner' %}<p><i class="fa-solid fa-hourglass-half"></i> Offered to <b>{{ to.user.username if to else 'a co-owner' }}</b> {{ offer.created_at|tenure }} ago: nothing changes until they accept.</p>
+<form method="post" action="/companies/{{ c.id }}/transfer/cancel">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-rotate-left"></i><span>withdraw the offer</span></button></form>
+{% else %}<p class="hx-hint">// {{ offer.by_name }} has offered {{ c.name }} to {{ to.user.username if to else 'a co-owner' }}</p>{% endif %}
+{% elif me.position == 'owner' and co_owners and not deletion %}<form method="post" action="/companies/{{ c.id }}/transfer" class="hx-form">{{ csrf_input(request) }}
+<label class="visually-hidden" for="hand-to">Co-owner to offer it to</label><select name="user_id" id="hand-to" class="hx-select hx-select-lg hx-select-wide" required>{% for m in co_owners %}<option value="{{ m.user_id }}">{{ m.user.username }}</option>{% endfor %}</select>
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Your password, to confirm</span><span class="hx-pfx" aria-hidden="true">your password:</span><input name="password" type="password" autocomplete="current-password" required></label>
+<button class="hx-btn hx-btn-sm" data-busy="checking…"><span>offer it to them</span><i class="fa-solid fa-crown"></i></button></form>
+{% elif me.position == 'owner' and not co_owners %}<p class="hx-hint">// appoint a co-owner first: {{ c.name }} can only go to one of them</p>
+{% elif me.position == 'owner' %}<p class="hx-hint">// withdraw the request to delete it first</p>
+{% else %}<p class="hx-hint">// only the owner can offer {{ c.name }} to a co-owner</p>{% endif %}
+</article>
+<p class="hx-eyebrow hx-gap">// delete {{ c.name }} · every salary settled and every order delivered first{% if co_owners %} · every co-owner must approve, one decline stops it{% endif %}</p>
+<article class="hx-card hx-danger-card">
+{% if deletion %}{% set yes = co_owners|selectattr('user_id', 'in', deletion.approved_by)|map(attribute='user.username')|list %}{% set waiting = co_owners|rejectattr('user_id', 'in', deletion.approved_by)|map(attribute='user.username')|list %}
+<p><i class="fa-solid fa-triangle-exclamation"></i> <b>{{ deletion.requested_by }}</b> asked to delete {{ c.name }} {{ deletion.requested_at|tenure }} ago. Approved: {{ yes|join(', ') or 'nobody yet' }} · waiting for: {{ waiting|join(', ') or 'nobody' }}.</p>
+{% if me.position == 'co_owner' and me.user_id not in deletion.approved_by %}<div class="hx-row-actions">{% for d, icon in (('approve', 'fa-check'), ('decline', 'fa-hand')) %}<form method="post" action="/companies/{{ c.id }}/delete/vote">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm{{ ' hx-btn-danger' if d == 'approve' else ' hx-btn-solid' }}" name="decision" value="{{ d }}"><i class="fa-solid {{ icon }}"></i><span>{{ d }} deleting it</span></button></form>{% endfor %}</div>
+{% elif me.position == 'owner' %}<form method="post" action="/companies/{{ c.id }}/delete/cancel">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-rotate-left"></i><span>withdraw the request</span></button></form>{% endif %}
+{% elif me.position == 'owner' %}<form method="post" action="/companies/{{ c.id }}/delete" class="hx-danger hx-form">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-trash"></i><span class="visually-hidden">Type the company name to confirm</span><input name="confirm" placeholder="type &quot;{{ c.name }}&quot; to delete" maxlength="64" autocomplete="off" required></label>
+<button class="hx-btn hx-btn-danger" data-busy="checking…"><span>{{ 'ask the co-owners to delete it' if co_owners else 'delete company' }}</span><i class="fa-solid fa-trash"></i></button>
+<p class="hx-hint">// every salary due must be paid first, the current cycle included, and every order delivered or cancelled, every return answered · everyone in {{ c.name }} is told by notification + email, with what it paid them</p></form>
+{% else %}<p class="hx-hint">// only the owner can ask to delete {{ c.name }}; then every co-owner, you included, has to approve it</p>{% endif %}
+</article>
+</section>{% endif %}
+{% if ledger %}<section class="hx-section" id="changes"><p class="hx-eyebrow">// change log · every change in {{ c.name }} · for its owner, co-owners, managers and HR</p>
+<div class="hx-card hx-changes"><p class="hx-hint">// its details, people and positions, payroll, deposits, tasks, meetings, chats (not what's said), the shop, and its members' own profile and document changes with full ID and bank numbers: who did what, when, old → new. Encrypted on the server; download it any time</p>
+<form method="post" action="/companies/{{ c.id }}/changes" class="hx-form hx-changes-form" data-download>{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Your password, to download the change log</span><span class="hx-pfx" aria-hidden="true">password:</span><input name="password" type="password" autocomplete="current-password" required></label>
+<button class="hx-btn"><span>download the change log (.txt)</span><i class="fa-solid fa-file-arrow-down"></i></button></form></div></section>{% endif %}
+{% if coai %}<section class="hx-section" id="ai">{# the company AI (companyai.py): coai = panel(): rows (each member's signals + what stops them), waiting + history (its promotion calls), names, decides (owner / co-owner) #}
+<p class="hx-eyebrow">// company AI · promotions and task allotment from CVs, reviews and work · only the owner, co-owners, managers and HR see this</p>
+<form method="get" action="/companies/{{ c.id }}/ai/best" class="hx-best-form"><label class="hx-field"><i class="fa-solid fa-ranking-star"></i><span class="visually-hidden">Describe a task to see who's best for it</span><span class="hx-pfx" aria-hidden="true">who's best for:</span><input name="task" minlength="3" maxlength="500" placeholder="describe a task, e.g. write the payroll API tests in python" autocomplete="off" required></label><button class="hx-btn hx-btn-solid"><span>find</span><i class="fa-solid fa-arrow-right"></i></button></form>
+{% if coai.decides %}<form method="post" action="/companies/{{ c.id }}/ai/mode" class="hx-ai-mode">{{ csrf_input(request) }}<span class="hx-ai-mode-label"><i class="fa-solid fa-ranking-star" aria-hidden="true"></i> AI promotion review</span>
+{% for v, t, d in (('off', 'off', 'no reviews'), ('suggest', 'suggest', 'it suggests, you decide'), ('auto', 'auto', 'it promotes by itself')) %}<label class="hx-ai-opt"><input type="radio" name="mode" value="{{ v }}" data-autosubmit{{ ' checked' if c.ai_promotions == v }}><span><b>{{ t }}</b><small>{{ d }}</small></span></label>{% endfor %}
+<noscript><button class="hx-btn hx-btn-sm">save</button></noscript></form>
+{% if c.ai_promotions != 'off' %}<form method="post" action="/companies/{{ c.id }}/ai/review" class="hx-gap-sm">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm" data-busy="queued…"{{ ' disabled' if not coai.ai.ready }}><i class="fa-solid fa-wand-magic-sparkles"></i><span>run the review now</span></button></form>{% endif %}{% endif %}
+<p class="hx-hint hx-gap-sm">// {% if c.ai_reviewed_at %}last review {{ at(c.ai_reviewed_at) }} · {% endif %}reviews count by who wrote them: owner and co-owners ×3, managers and HR ×2, colleagues ×1 · the shortlist needs a score of 3+, no dislike from the owner or a co-owner, no overdue tasks, 70% of tasks on time and within their deadlines on average, 75% attendance, a CV or skills on their profile and {{ coai.after }} days in the position · one step up at a time, never to co-owner · {% if not coai.ai.ready %}<span class="hx-off-hours">the local AI is offline: nothing is promoted by itself until it's back</span>{% else %}the local AI reads the shortlist's CVs, speed and reviews and has the last word{% endif %}</p>
+{% for s in coai.waiting %}<article class="hx-ai-call"><div><b>{{ coai.names.get(s.user_id, 'someone') }}</b>: {{ positions[s.from_position].label }} → <b>{{ positions[s.to_position].label }}</b><small>{{ s.ai_says or "the local AI was offline: only the rules shortlisted them" }}</small></div>
+{% if coai.decides %}<div class="hx-row-actions"><form method="post" action="/companies/{{ c.id }}/ai/calls/{{ s.id }}/apply">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-solid"><i class="fa-solid fa-arrow-up"></i><span>promote</span></button></form>
+<form method="post" action="/companies/{{ c.id }}/ai/calls/{{ s.id }}/dismiss">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><span>dismiss</span></button></form></div>{% endif %}</article>{% endfor %}
+{% if coai.rows %}<div class="hx-admin-table hx-gap-sm"><table><thead><tr><th>member</th><th>reviews</th><th>tasks</th><th>attendance</th><th>the AI's view</th></tr></thead><tbody>
+{% for r in coai.rows %}<tr><td><b>{{ r.m.user.username }}</b><small>{{ positions[r.m.position].label }} · {{ 'CV on file' if r.s.resume else 'profile only' if r.s.cv else 'no CV yet' }}</small></td><td><b>{{ r.s.weighted }}</b><small>{{ r.s.likes }} like{{ '' if r.s.likes == 1 else 's' }}, {{ r.s.dislikes }} dislike{{ '' if r.s.dislikes == 1 else 's' }}</small></td>
+<td>{{ r.s.on_time }} on time<small>{{ r.s.late }} late · {{ r.s.overdue }} overdue · {{ r.s.open }} open{% if coai.pace(r.s) %} · {{ coai.pace(r.s) }}{% endif %}</small></td><td>{% if r.s.workdays %}{{ r.s.present }} of {{ r.s.workdays }}<small>working days, last 30</small>{% else %}<small>not monitored</small>{% endif %}</td>
+<td>{% if r.why_not %}<small>{{ r.why_not }}</small>{% else %}<b>ready for {{ positions[r.next[0]].label if r.next|length == 1 else 'a step up' }}</b>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>{% endif %}
+{% if coai.history %}<details class="hx-gap-sm"><summary class="hx-hint">// the AI's past calls</summary><ul class="hx-ai-warn-list hx-gap-sm">{% for s in coai.history %}<li class="hx-ai-warn"><p><b>{{ coai.names.get(s.user_id, 'someone') }}</b>: {{ positions[s.from_position].label }} → {{ positions[s.to_position].label }} · {{ {'auto': 'promoted by itself', 'applied': 'promoted by ' ~ s.decided_by, 'dismissed': 'not this time (' ~ s.decided_by ~ ')', 'stale': 'no longer applied'}.get(s.status, s.status) }}</p>{% if s.ai_says %}<small>{{ s.ai_says }}</small>{% endif %}<time>{{ at(s.decided_at or s.created_at) }}</time></li>{% endfor %}</ul></details>{% endif %}
+<p class="hx-hint hx-gap-sm">// task allotment: on the <a href="/companies/{{ c.id }}/tasks#give">tasks page</a>, choose "the AI picks" (up to 5 people) on a task: it goes by what the task says against each person's skills and CV, then their reviews, how reliably they finish and how much they already have</p>
+</section>{% endif %}
+{% if ledger %}<section class="hx-section" id="statement">
+<p class="hx-eyebrow">// transaction statement · only the owner, co-owners, managers and HR see this</p>
+{% if totals or deposited %}<div class="hx-totals">{% for cur, gross, tds, net in totals %}<div><small>paid out ({{ cur }})</small><b>{{ money(cur, net) }}</b><span>gross {{ money(cur, gross) }} · TDS {{ money(cur, tds) }}</span></div>{% endfor %}
+{% for cur, amount, n in deposited %}<div><small>deposited ({{ cur }})</small><b>{{ money(cur, amount) }}</b><span>{{ n }} deposit{{ '' if n == 1 else 's' }} · added to the net worth</span></div>{% endfor %}</div>{% endif %}
+{% if lines %}<div class="hx-tx-list">{% for kind, t in lines %}{{ payout_row(t, 'company') if kind == 'out' else deposit_row(t) }}{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-receipt"></i><span>No payments or deposits recorded yet. Pay someone from the payroll above, or deposit funds: it appears here (payments on their statement too, and both sides get the payslip by email).</span></p>{% endif %}
+</section>{% endif %}
+</div>{% endblock %}
+{% block modals %}{% if ledger and c.salary_currency and cbank and c.net_worth is not none %}
+{% for m in members if may_pay(m) and banks.get(m.user_id) and pay[m.user_id].due and not (c.halted_at and m.position in ('owner', 'co_owner')) %}{% set r = pay[m.user_id] %}{% set b = banks[m.user_id] %}{# one "record a payment" dialog per payable member #}
+<div class="modal fade hx-modal" id="payto-{{ m.user_id }}" tabindex="-1" aria-labelledby="payto-{{ m.user_id }}-title" aria-hidden="true">
+<div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+<div class="modal-header hx-term-bar"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><h2 class="modal-title hx-term-title" id="payto-{{ m.user_id }}-title">~/payroll/{{ m.user.username }}</h2>
+<button type="button" class="hx-icon-btn hx-modal-x" data-mdb-dismiss="modal" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
+<div class="modal-body">
+<form method="post" action="/companies/{{ c.id }}/payouts/{{ m.user_id }}" enctype="multipart/form-data" class="hx-form" id="payto-form-{{ m.user_id }}" data-payout data-salary-currency="{{ c.salary_currency }}" data-max="{{ r.max }}">{{ csrf_input(request) }}
+<div class="hx-pay-to"><i class="fa-solid fa-building-columns"></i><div><small>send {{ m.user.username }}'s salary to</small><b>{{ b.holder_name }}</b>
+<span>{{ bank_line(b) }}</span>
+<span>account no. <code>{{ accounts[m.user_id] or 'unreadable: ask them to enter it again in settings' }}</code></span></div></div>
+<p class="hx-hint">// send the money from {{ c.name }}'s {{ cbank.bank_name }} account ••••{{ cbank.account_last4 }} first, then record it here. Everything is typed in by you{% if r.suggest %}; calculated salary: {{ money(c.salary_currency, r.suggest) }} per cycle{% endif %}{% if r.minimum %} (minimum {{ money(c.salary_currency, r.minimum) }}){% endif %}</p>
+<p class="{{ 'hx-err-msg' if r.max < (r.minimum or 1) else 'hx-hint hx-ok' }}"><i class="fa-solid fa-scale-balanced"></i> {% set worth = convert(c.net_worth, worth_cur(c), c.salary_currency) %}clearance: at most {{ money(c.salary_currency, [r.max, 0]|max) }} for this payment (net worth {{ money(c.salary_currency, worth) }}{% if worth_cur(c) != c.salary_currency %} = {{ money(worth_cur(c), c.net_worth) }}{% endif %} − {{ money(c.salary_currency, worth - r.max) }} the others' working hours are owed){% if r.max < (r.minimum or 1) %}: not enough to pay {{ m.user.username }} now. Add funds first{% endif %}</p>
+<label class="visually-hidden" for="payto-{{ m.user_id }}-cycle">Pay period</label>
+<select name="cycle" id="payto-{{ m.user_id }}-cycle" class="hx-select hx-select-lg hx-select-wide" required>{# the oldest 40: with 1-day cycles a long backlog would be hundreds of options in every dialog; the next ones appear as these are paid #}{% for k, first, last in r.due[:40] %}{% set t = r.terms[k] %}<option value="{{ k }}" data-minimum="{{ t.minimum or 0 }}" data-suggest="{{ t.suggest or 0 }}">cycle {{ k }}: {{ first.strftime('%d %b') }} – {{ last.strftime('%d %b %Y') }}{{ ' · overdue' if k < r.cycle else ' · current' }}{% if t.suggest %} · calculated {{ money(c.salary_currency, t.suggest) }}{% endif %}{% if t.leave %} ({{ t.leave }} day{{ '' if t.leave == 1 else 's' }} unpaid leave){% endif %}</option>{% endfor %}</select>
+{% set theirs = currency_of(b.country) %}<label class="visually-hidden" for="payto-{{ m.user_id }}-cur">Currency the salary was sent in</label>
+<select name="currency" id="payto-{{ m.user_id }}-cur" class="hx-select hx-select-lg hx-select-wide" data-pay-currency required>{% for k in currencies %}<option value="{{ k }}" data-rate="{{ fx_rate(k, c.salary_currency) }}"{% if k == c.salary_currency %} selected{% endif %}>paid in {{ k }}{% if k == c.salary_currency %} · the salary currency{% elif k == theirs %} · {{ m.user.username }}'s bank country uses it{% endif %}</option>{% endfor %}</select>
+<div class="hx-pay-amounts">
+<label class="hx-field"><i class="fa-solid fa-money-bill-wave"></i><span class="visually-hidden">Gross salary, in the currency picked above</span><span class="hx-pfx" aria-hidden="true">gross <span data-pay-cur>{{ c.salary_currency }}</span>:</span><input type="number" name="gross" min="1" max="{{ [r.max, 1]|max }}" step="1" inputmode="numeric" placeholder="{{ r.suggest or 'salary' }}" data-gross required></label>
+{% set tl = tax_label(c.salary_currency) %}<label class="hx-field"><i class="fa-solid fa-percent"></i><span class="visually-hidden">{{ tl }}, in the currency picked above</span><span class="hx-pfx" aria-hidden="true">{{ tl }}:</span><input type="number" name="tds" min="0" max="10000000000" step="1" inputmode="numeric" placeholder="0 if none" data-tds{% if pay_rules.get(c.salary_currency, {}).get('no_tax') %} data-no-tax="{{ pay_rules[c.salary_currency].country }}"{% endif %} required></label>
+<output class="hx-net" data-net data-currency="{{ c.salary_currency }}" data-tax="{{ tl }}">net: type the gross and {{ tl }}</output></div>
+<p class="hx-hint" data-counted hidden>// in {{ c.salary_currency }}, the salary currency, this gross is <b data-counted-amount>–</b> at today's rate (<span data-counted-rate></span>): the minimum and the clearance are checked in it · this cycle's gross can be <span data-counted-range></span></p>
+<p class="hx-err-msg" data-no-tax-warn hidden><i class="fa-solid fa-triangle-exclamation"></i> There's no personal income tax in {{ pay_rules.get(c.salary_currency, {}).get('country', '') }}: normally nothing is withheld. Check before recording a deduction.</p>
+{{ rules_box(c.salary_currency) }}
+<label class="hx-field"><i class="fa-solid fa-building-columns"></i><span class="visually-hidden">Account number the money was sent to</span><span class="hx-pfx" aria-hidden="true">sent to a/c:</span><input name="account_number" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="40" placeholder="type the account number" required></label>
+<label class="hx-field"><i class="fa-solid fa-calendar-check"></i><span class="visually-hidden">Date and time of the transfer ({{ tz }})</span><span class="hx-pfx" aria-hidden="true">sent on:</span><input type="datetime-local" name="transferred_at" max="{{ now_local }}" required></label>
+<label class="hx-field"><i class="fa-solid fa-hashtag"></i><span class="visually-hidden">Transaction reference (UTR)</span><span class="hx-pfx" aria-hidden="true">reference:</span><input name="reference" minlength="6" maxlength="40" autocomplete="off" spellcheck="false" placeholder="UTR / transaction id" required></label>
+<label class="hx-field hx-file"><i class="fa-solid fa-image"></i><span class="visually-hidden">Transfer screenshot (proof)</span><span class="hx-pfx" aria-hidden="true">proof:</span><input type="file" name="proof" accept="image/png,image/jpeg,image/webp,image/gif" required></label>
+<p class="hx-hint">// time is {{ tz }} · the account number must match {{ m.user.username }}'s saved one · the screenshot is virus-scanned, re-encoded and only shown to {{ m.user.username }} and this company's owner, co-owners, managers and HR</p>
+</form>
+</div>
+<div class="modal-footer"><button type="button" class="hx-btn hx-btn-ghost" data-mdb-dismiss="modal"><span>cancel</span></button>
+<button class="hx-btn hx-btn-solid" form="payto-form-{{ m.user_id }}" data-busy="recording…"><span>record payment</span><i class="fa-solid fa-paper-plane"></i></button></div>
+</div></div></div>
+{% endfor %}{% endif %}
+{% if ledger and top %}{# the company's own account + net worth: owner / co-owners, with their password #}
+{% for dlg, title in (("co-bank", "company account"), ("co-worth", "net worth"), ("co-proof", "identity proof")) %}
+<div class="modal fade hx-modal" id="{{ dlg }}" tabindex="-1" aria-labelledby="{{ dlg }}-title" aria-hidden="true">
+<div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+<div class="modal-header hx-term-bar"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><h2 class="modal-title hx-term-title" id="{{ dlg }}-title">~/companies/{{ c.name }}/{{ dlg }}</h2>
+<button type="button" class="hx-icon-btn hx-modal-x" data-mdb-dismiss="modal" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
+<div class="modal-body">
+{% if dlg == "co-bank" %}<form method="post" action="/companies/{{ c.id }}/bank" class="hx-form" id="{{ dlg }}-form">{{ csrf_input(request) }}
+<p class="hx-hint">// the account {{ c.name }}'s salaries are paid from: shown as "paid from" on every payslip. The number is stored encrypted; only its last 4 digits are shown</p>
+<label class="hx-field"><i class="fa-solid fa-building"></i><span class="visually-hidden">Account name</span><span class="hx-pfx" aria-hidden="true">holder:</span><input name="holder_name" value="{{ cbank.holder_name if cbank else c.name }}" minlength="2" maxlength="100" required></label>
+<label class="hx-field"><i class="fa-solid fa-building-columns"></i><span class="visually-hidden">Bank name</span><span class="hx-pfx" aria-hidden="true">bank:</span><input name="bank_name" value="{{ cbank.bank_name if cbank else '' }}" minlength="2" maxlength="100" placeholder="e.g. HDFC Bank" required></label>
+<label class="hx-field"><i class="fa-solid fa-code-branch"></i><span class="visually-hidden">Branch (optional)</span><span class="hx-pfx" aria-hidden="true">branch:</span><input name="branch" value="{{ cbank.branch if cbank else '' }}" maxlength="100" placeholder="optional"></label>
+{{ bank_codes(cbank) }}
+<label class="visually-hidden" for="co-bank-type">Account type</label>
+<select name="account_type" id="co-bank-type" class="hx-select hx-select-lg" required>{% for t in account_types %}<option value="{{ t }}"{% if (cbank.account_type if cbank else 'current') == t %} selected{% endif %}>{{ t }} account</option>{% endfor %}</select>
+<label class="hx-field"><i class="fa-solid fa-hashtag"></i><span class="visually-hidden">Account number</span><span class="hx-pfx" aria-hidden="true" data-bank-account-label>account no:</span><input name="account_number" inputmode="numeric" maxlength="40" placeholder="{{ 'type it to change it (now ••••' ~ cbank.account_last4 ~ ')' if cbank else '9 to 18 digits' }}"{% if cbank %} data-keep="type it to change it (now ••••{{ cbank.account_last4 }})"{% endif %} autocomplete="off" spellcheck="false" required data-bank-account></label>
+<label class="hx-field"><i class="fa-solid fa-hashtag"></i><span class="visually-hidden">Account number again</span><span class="hx-pfx" aria-hidden="true">again:</span><input name="account_confirm" inputmode="numeric" maxlength="40" placeholder="confirm the account number" autocomplete="off" spellcheck="false" required data-bank-account></label>
+{% elif dlg == "co-proof" %}<form method="post" action="/companies/{{ c.id }}/identity" enctype="multipart/form-data" class="hx-form" id="{{ dlg }}-form">{{ csrf_input(request) }}
+<p class="hx-hint">// a clear photo of {{ c.name }}'s registration document. Virus-scanned, re-encoded and never public: only its owner, co-owners, managers and HR can open it</p>
+<label class="visually-hidden" for="co-proof-type">Document</label>
+<select name="id_proof_type" id="co-proof-type" class="hx-select hx-select-lg" required>{% for k, v in company_proofs.items() %}<option value="{{ k }}"{% if c.id_proof_type == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+<label class="hx-field hx-file"><i class="fa-solid fa-camera"></i><span class="visually-hidden">Photo of the document</span><span class="hx-pfx" aria-hidden="true">photo:</span><input type="file" name="file" accept="image/png,image/jpeg,image/webp,image/gif" required></label>
+{% else %}<form method="post" action="/companies/{{ c.id }}/net-worth" class="hx-form" id="{{ dlg }}-form">{{ csrf_input(request) }}
+<p class="hx-hint">// the funds {{ c.name }} has, in any currency: if it isn't the salaries' ({{ c.salary_currency or 'not set' }}), the payroll guard converts at the day's rate. Every payment takes its gross off it, and can't be more than the clearance: the net worth minus what everyone else's working hours are owed. If what the employees are owed ever goes over it, the payroll guard warns you, and halts operations if it isn't fixed within 24 hours</p>
+<div class="hx-reg-row"><label class="visually-hidden" for="co-worth-cur">Currency of the net worth</label><select name="net_worth_currency" id="co-worth-cur" class="hx-select hx-select-lg" required>{% for k in currencies %}<option value="{{ k }}"{% if k == (worth_cur(c) or default_currency) %} selected{% endif %}>{{ k }}</option>{% endfor %}</select>
+<label class="hx-field"><i class="fa-solid fa-scale-balanced"></i><span class="visually-hidden">Net worth</span><span class="hx-pfx" aria-hidden="true">net worth:</span><input type="number" name="net_worth" min="0" max="1000000000000000" step="1" inputmode="numeric" value="{{ c.net_worth if c.net_worth is not none else '' }}" required></label></div>
+<p class="hx-hint">// employee liability right now: {{ money(c.salary_currency, held) if c.salary_currency else '—' }}</p>{% endif %}
+{% if dlg != "co-proof" %}<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Your password</span><span class="hx-pfx" aria-hidden="true">your password:</span><input name="password" type="password" autocomplete="current-password" required></label>{% endif %}
+</form>
+</div>
+<div class="modal-footer"><button type="button" class="hx-btn hx-btn-ghost" data-mdb-dismiss="modal"><span>cancel</span></button>
+<button class="hx-btn hx-btn-solid" form="{{ dlg }}-form" data-busy="saving…"><span>save {{ title }}</span><i class="fa-solid fa-lock"></i></button></div>
+</div></div></div>{% endfor %}
+{% if cbank and c.salary_currency %}{# deposit funds: recorded like a payout, added to the net worth #}
+<div class="modal fade hx-modal" id="co-deposit" tabindex="-1" aria-labelledby="co-deposit-title" aria-hidden="true">
+<div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+<div class="modal-header hx-term-bar"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><h2 class="modal-title hx-term-title" id="co-deposit-title">~/companies/{{ c.name }}/deposit</h2>
+<button type="button" class="hx-icon-btn hx-modal-x" data-mdb-dismiss="modal" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
+<div class="modal-body">
+<form method="post" action="/companies/{{ c.id }}/deposits" enctype="multipart/form-data" class="hx-form" id="co-deposit-form">{{ csrf_input(request) }}
+<div class="hx-pay-to"><i class="fa-solid fa-piggy-bank"></i><div><small>pay the money into</small><b>{{ cbank.holder_name }}</b>
+<span>{{ bank_line(cbank) }}</span></div></div>
+<p class="hx-hint">// once the money has arrived in {{ c.name }}'s account, record it here: it's added to the net worth ({{ money(worth_cur(c), c.net_worth) if c.net_worth is not none else 'not set yet' }} now), so it can be paid out as salaries. Everything is typed in by you</p>
+<div class="hx-reg-row"><label class="visually-hidden" for="co-deposit-cur">Currency that arrived</label><select name="currency" id="co-deposit-cur" class="hx-select hx-select-lg" required>{% for k in currencies %}<option value="{{ k }}"{% if k == worth_cur(c) %} selected{% endif %}>{{ k }}</option>{% endfor %}</select>
+<label class="hx-field"><i class="fa-solid fa-money-bill-wave"></i><span class="visually-hidden">Amount</span><span class="hx-pfx" aria-hidden="true">amount:</span><input type="number" name="amount" min="1" max="1000000000000000" step="1" inputmode="numeric" placeholder="500000" required></label></div>
+<p class="hx-hint">// in another currency than the net worth's ({{ worth_cur(c) }})? It's converted at the day's rate as it's added</p>
+<label class="hx-field"><i class="fa-solid fa-user-tie"></i><span class="visually-hidden">Where the money came from</span><span class="hx-pfx" aria-hidden="true">from:</span><input name="source" minlength="2" maxlength="100" placeholder="investor, owner's own account, client invoice…" required></label>
+<label class="hx-field"><i class="fa-solid fa-building-columns"></i><span class="visually-hidden">Company account number it was credited to</span><span class="hx-pfx" aria-hidden="true">credited to a/c:</span><input name="account_number" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="40" placeholder="type {{ c.name }}'s account number (••••{{ cbank.account_last4 }})" required></label>
+<label class="hx-field"><i class="fa-solid fa-calendar-check"></i><span class="visually-hidden">Date and time it arrived ({{ tz }})</span><span class="hx-pfx" aria-hidden="true">received on:</span><input type="datetime-local" name="transferred_at" max="{{ now_local }}" required></label>
+<label class="hx-field"><i class="fa-solid fa-hashtag"></i><span class="visually-hidden">Transaction reference (UTR)</span><span class="hx-pfx" aria-hidden="true">reference:</span><input name="reference" minlength="6" maxlength="40" autocomplete="off" spellcheck="false" placeholder="UTR / transaction id" required></label>
+<label class="hx-field"><i class="fa-solid fa-comment"></i><span class="visually-hidden">Note (optional)</span><span class="hx-pfx" aria-hidden="true">note:</span><input name="note" maxlength="300" placeholder="optional, e.g. seed round, tranche 1"></label>
+<label class="hx-field hx-file"><i class="fa-solid fa-image"></i><span class="visually-hidden">Bank screenshot (proof)</span><span class="hx-pfx" aria-hidden="true">proof:</span><input type="file" name="proof" accept="image/png,image/jpeg,image/webp,image/gif" required></label>
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Your password</span><span class="hx-pfx" aria-hidden="true">your password:</span><input name="password" type="password" autocomplete="current-password" required></label>
+<p class="hx-hint">// time is {{ tz }} · the account number must match {{ c.name }}'s saved account · the screenshot is virus-scanned, re-encoded and only shown to this company's owner, co-owners, managers and HR</p>
+</form>
+</div>
+<div class="modal-footer"><button type="button" class="hx-btn hx-btn-ghost" data-mdb-dismiss="modal"><span>cancel</span></button>
+<button class="hx-btn hx-btn-solid" form="co-deposit-form" data-busy="recording…"><span>record deposit</span><i class="fa-solid fa-piggy-bank"></i></button></div>
+</div></div></div>{% endif %}{% endif %}{% endblock %}
+{% block scripts %}{% if done %}<script src="{{ static('chartjs-4.4.7/chart.umd.min.js') }}"></script>{% endif %}{% endblock %}

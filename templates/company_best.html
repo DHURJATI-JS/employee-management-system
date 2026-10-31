@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{# routers/companyai.py: "who's best for this task?". task, rows (companyai.rank: {m, s, fit, shared, away, why}, best first), verdict ({best, why}: the local AI's, when asked; best "" = no answer), ready (the local AI is up), nobody (nobody's ranked below you) #}
+{% block title %}Who's best for this task{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/companies/{{ c.name }}/best-for-task</span><span class="hx-term-meta"><i class="fa-solid fa-ranking-star"></i> company AI</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>who's best for this task?</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// describe the task: {{ c.name }}'s people ranked below you are ranked by their CV and profile, reviews, how fast and reliably they finish, and how much they already have</p>
+{% if nobody %}<p class="hx-empty"><i class="fa-solid fa-user-slash"></i><span>Nobody in {{ c.name }} is ranked below you ({{ positions[me.position].label }}) yet.</span></p>
+{% else %}<form method="get" action="/companies/{{ c.id }}/ai/best" class="hx-form">
+<label class="hx-field hx-area"><i class="fa-solid fa-list-check"></i><span class="visually-hidden">What's the task?</span><textarea name="task" rows="3" minlength="3" maxlength="500" placeholder="e.g. build the payroll API tests in python, or prepare the GST report for October" required>{{ task }}</textarea></label>
+<button class="hx-btn hx-btn-solid"><span>rank the team</span><i class="fa-solid fa-arrow-right"></i></button></form>{% endif %}
+</div>
+</section>
+{% if rows %}<section class="hx-section">
+<form method="post" action="/companies/{{ c.id }}/ai/best" class="hx-ai-ask">{{ csrf_input(request) }}<input type="hidden" name="task" value="{{ task }}">
+<button class="hx-btn hx-btn-solid" data-busy="reading their CVs…"{{ ' disabled' if not ready }}><i class="fa-solid fa-wand-magic-sparkles"></i><span>ask the AI to choose</span></button>
+<p class="hx-hint">// {{ 'the local AI reads the top 5: their reviews, speed, profile and the words of their CVs. About a minute on this server' if ready else "the local AI is offline: the ranking below still works" }}</p></form>
+{% if verdict %}{% if verdict.best %}<article class="hx-ai-call hx-gap-sm"><div><i class="fa-solid fa-ranking-star" aria-hidden="true"></i> The AI's choice: <b>{{ verdict.best }}</b><small>{{ verdict.why }}</small></div></article>
+{% else %}<p class="hx-err-msg hx-gap-sm"><i class="fa-solid fa-plug-circle-xmark"></i> The local AI didn't answer in time: go by the ranking below.</p>{% endif %}{% endif %}
+<p class="hx-eyebrow hx-gap">// best first, for "{{ task|truncate(80) }}"</p>
+<div class="row g-4">{% for r in rows %}{% set s = r.s %}<div class="col-md-6 col-xl-4"><article class="hx-card hx-best{{ ' hx-best-away' if r.away }}">
+<div class="hx-best-head"><span class="hx-best-no">#{{ loop.index }}</span><div><h2>{{ r.m.user.username }}</h2><small>{{ positions[r.m.position].label }}{% if s.cv and s.cv.years %} · {{ s.cv.years }} years{% endif %}{% if s.resume %} · <i class="fa-solid fa-file-pdf"></i> CV on file{% endif %}</small></div><span class="hx-match" title="how much of the task's words their CV and profile cover"><b>{{ r.fit }}%</b><small>fit</small></span></div>
+{% if r.away %}<p class="hx-err-msg"><i class="fa-solid fa-umbrella-beach"></i> {{ r.away }} today</p>{% endif %}
+{% if s.cv and s.cv.headline %}<p class="hx-about">{{ s.cv.headline }}</p>{% endif %}
+{% if r.shared %}<p class="hx-why"><i class="fa-solid fa-link"></i><span>matched:</span>{% for w in r.shared %}<mark>{{ w }}</mark>{% endfor %}</p>{% elif s.cv %}<p class="hx-hint">// nothing on their profile uses the task's words</p>{% else %}<p class="hx-hint">// no CV or skills on their profile yet</p>{% endif %}
+<ul class="hx-best-facts"><li><i class="fa-solid fa-thumbs-up"></i>{{ s.likes }} like{{ '' if s.likes == 1 else 's' }}, {{ s.dislikes }} dislike{{ '' if s.dislikes == 1 else 's' }} <small>(score {{ s.weighted }})</small></li>
+<li><i class="fa-solid fa-gauge-high"></i>{{ pace_text(s) or 'no finished tasks yet' }}</li>
+<li><i class="fa-solid fa-list-check"></i>{{ s.on_time }} on time, {{ s.late }} late · {{ s.open + s.overdue }} open now</li>
+{% if s.workdays %}<li><i class="fa-solid fa-user-clock"></i>present {{ s.present }} of {{ s.workdays }} working days</li>{% endif %}</ul>
+<div class="hx-result-go"><a href="/companies/{{ c.id }}/tasks?title={{ task|truncate(120, True, '')|urlencode }}&to={{ r.m.user_id }}#give" class="hx-btn hx-btn-sm"><i class="fa-solid fa-paper-plane"></i><span>give them this task</span></a>
+<a href="/companies/{{ c.id }}/members/{{ r.m.user_id }}" class="hx-btn hx-btn-sm hx-btn-ghost"><span>profile</span></a></div>
+</article></div>{% endfor %}</div>
+</section>{% endif %}
+<p class="hx-hint hx-gap"><a href="/companies/{{ c.id }}/dashboard#ai"><i class="fa-solid fa-arrow-left"></i> back to the company AI</a></p>
+</div>{% endblock %}

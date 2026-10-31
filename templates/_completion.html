@@ -1,0 +1,21 @@
+{# How complete a profile / company is (completion.py): {% from "_completion.html" import completion_card %} {{ completion_card(done, "~/profile/completion", "your profile") }}.
+   The ring is Chart.js (app.js [data-completion]): one segment per group's finished items, in the palette's fixed order (the swatches here match:
+   app.css .hx-sw-*), + a neutral "still to do". The checklist is the ring's table: every item, done or not, why it matters and where to do it #}
+{% macro completion_card(d, title, what) %}<section class="hx-term hx-completion hx-reveal" aria-labelledby="done-title">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">{{ title }}</span><span class="hx-term-meta"><i class="fa-solid fa-chart-pie"></i> {{ d.done }}/{{ d.total }}</span></div>
+<div class="hx-term-body">
+<div class="hx-done-top">
+<div class="hx-ring"><canvas data-completion='{{ d.chart|tojson }}' data-left="{{ d.left }}" role="img" aria-label="{{ what }}: {{ d.pct }}% complete, {{ d.done }} of {{ d.total }} done"></canvas>
+<div class="hx-ring-mid" aria-hidden="true"><b data-count-to="{{ d.pct }}" data-suffix="%">{{ d.pct }}%</b><small>complete</small></div></div>
+<div class="hx-done-sum"><h2 class="hx-title hx-title-sm" id="done-title">{{ what }}: {{ d.pct }}% complete</h2>
+{% if d.next %}<p class="hx-sub">// {{ d.left }} thing{{ '' if d.left == 1 else 's' }} left. Next: {{ d.next.label }}, {{ d.next.why }}</p>
+<a href="{{ d.next.href }}" class="hx-btn hx-btn-sm hx-btn-solid"><span>{{ d.next.label }}</span><i class="fa-solid fa-arrow-right"></i></a>
+{% else %}<p class="hx-sub hx-ok"><i class="fa-solid fa-circle-check"></i> everything's done</p>{% endif %}</div>
+</div>
+<details class="hx-done-more"{{ ' open' if d.next }}><summary><i class="fa-solid fa-list-check"></i> the checklist</summary>{# open while something's left #}
+<div class="hx-done-groups">{% for g in d.groups %}<div class="hx-done-group">
+<p class="hx-done-head"><span class="hx-sw hx-sw-{{ loop.index }}" aria-hidden="true"></span><b>{{ g.label }}</b><small>{{ g.done }} of {{ g.total }}</small></p>
+<ul class="hx-done-list">{% for i in g.rows %}<li class="{{ 'hx-done-yes' if i.done else 'hx-done-no' }}"><i class="fa-solid {{ 'fa-circle-check' if i.done else 'fa-circle-dot' }}" aria-hidden="true"></i><span>{% if i.done %}<b>{{ i.label }}</b>{% else %}<a href="{{ i.href }}">{{ i.label }}</a>{% endif %}<small>{{ i.why }}</small></span><span class="visually-hidden">{{ ': done' if i.done else ': still to do' }}</span></li>{% endfor %}</ul>
+</div>{% endfor %}</div></details>
+</div>
+</section>{% endmacro %}

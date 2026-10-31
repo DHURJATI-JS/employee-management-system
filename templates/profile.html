@@ -1,0 +1,57 @@
+{% extends "base.html" %}{% from "_completion.html" import completion_card %}
+{# routers/discover.py profile_page(): profile (None until saved once), ai_engine ("claude" reads CVs with Claude, else the local reader), done (completion.of_profile:
+   the ring + checklist) #}
+{% block title %}Profile & CV{% endblock %}
+{% block content %}<div class="hx-wide">
+<div class="row g-4">
+<div class="col-lg-7">
+<section class="hx-term hx-auth hx-page-head" id="biodata">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/profile/biodata.yml</span><span class="hx-term-meta"><i class="fa-solid fa-user-lock"></i> only you</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>vim biodata.yml</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// what you do and what you're good at. Recommendations match companies against this</p>
+{% if dob %}<p class="hx-out hx-dob"><i class="fa-solid fa-cake-candles"></i>born {{ dob.strftime('%d %b %Y') }} · {{ dob|age }} years old<span class="hx-badge hx-badge-lock" title="Set at signup; it can't be changed">locked</span></p>
+{% else %}<form method="post" action="/profile/dob" class="hx-dob-form">{{ csrf_input(request) }}
+<label class="hx-field hx-date"><i class="fa-solid fa-cake-candles"></i><span class="visually-hidden">Your date of birth</span><span class="hx-pfx" aria-hidden="true">born:</span><input name="dob" type="date" max="{{ max_dob }}" autocomplete="bday" required></label>
+<button class="hx-btn hx-btn-sm" data-busy="saving…"><i class="fa-solid fa-floppy-disk"></i><span>add date of birth</span></button>
+<p class="hx-hint">// your account was made before signup asked for it: add it once (18+); it can't be changed afterwards</p>
+</form>{% endif %}
+<form method="post" action="/profile" class="hx-form">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-id-card"></i><span class="visually-hidden">Headline</span><span class="hx-pfx" aria-hidden="true">headline:</span><input name="headline" value="{{ profile.headline if profile else '' }}" placeholder="Backend developer" maxlength="120"></label>
+<label class="hx-field"><i class="fa-solid fa-hourglass-half"></i><span class="visually-hidden">Years of experience</span><span class="hx-pfx" aria-hidden="true">years:</span><input name="years" type="number" min="0" max="60" inputmode="numeric" value="{{ profile.years if profile and profile.years is not none else '' }}" placeholder="3"></label>
+<label class="hx-field"><i class="fa-solid fa-microchip"></i><span class="visually-hidden">Skills, separated by commas</span><span class="hx-pfx" aria-hidden="true">skills:</span><input name="skills" value="{{ profile.skills|join(', ') if profile else '' }}" placeholder="python, sql, docker" maxlength="1200"></label>
+<label class="hx-field hx-area"><i class="fa-solid fa-align-left"></i><span class="visually-hidden">About you</span><textarea name="bio" rows="5" maxlength="2000" placeholder="a few lines about your work, what you've built, what you want next">{{ profile.bio if profile else '' }}</textarea></label>
+<fieldset class="hx-fieldset hx-want" id="salary"><legend class="hx-hint">// the salary you want (optional): companies that pay it are recommended first. Or tell the bar: "I want 50k to 80k a month"</legend>
+<div class="hx-want-row">
+<label class="hx-field hx-pay"><i class="fa-solid fa-money-bill-wave"></i><span class="visually-hidden">Lowest salary you'd accept</span><span class="hx-pfx" aria-hidden="true">from</span><input name="want_min" type="number" min="1" max="10000000000" step="1" inputmode="numeric" value="{{ (profile.want_min or '') if profile else '' }}" placeholder="50000"></label>
+<label class="hx-field hx-pay"><span class="visually-hidden">Top of your range (optional)</span><span class="hx-pfx" aria-hidden="true">to</span><input name="want_max" type="number" min="1" max="10000000000" step="1" inputmode="numeric" value="{{ (profile.want_max or '') if profile else '' }}" placeholder="80000 (optional)"></label>
+<label class="visually-hidden" for="want-cur">Currency (your region: {{ region_name(region) }})</label><select name="want_currency" id="want-cur" class="hx-select" title="defaults to your region's currency ({{ region_name(region) }}: change it in settings)">{% for x in currencies %}<option value="{{ x }}"{% if x == ((profile.want_currency if profile else None) or default_currency) %} selected{% endif %}>{{ x }}</option>{% endfor %}</select>
+<label class="visually-hidden" for="want-per">Per</label><select name="want_period" id="want-per" class="hx-select">{% for x in periods %}<option value="{{ x }}"{% if x == ((profile.want_period if profile else None) or 'month') %} selected{% endif %}>per {{ x }}</option>{% endfor %}</select>
+</div></fieldset>
+<label class="hx-choice hx-toggle"><input type="checkbox" name="discoverable" value="true"{% if profile and profile.discoverable %} checked{% endif %}><i class="fa-solid fa-users-viewfinder"></i><span>let company owners find me in people search and approach me. They see this profile, never your CV; if your company doesn't let its employees join others, they see your email instead so they can ask you directly</span><i class="fa-solid fa-check hx-check"></i></label>
+<button class="hx-btn" data-busy="saving…"><span>save profile</span><i class="fa-solid fa-floppy-disk"></i></button>
+</form>
+</div>
+</section>
+</div>
+<div class="col-lg-5">
+{{ completion_card(done, "~/profile/completion", "your profile") }}
+<section class="hx-term hx-page-head hx-gap-sm" id="cv">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/profile/cv.pdf</span><span class="hx-term-meta"><i class="fa-solid fa-virus-slash"></i> clamav</span></div>
+<div class="hx-term-body">
+<h2 class="hx-title hx-title-sm"><span class="hx-prompt">&gt;</span> read my CV</h2>
+<p class="hx-sub">// upload a PDF and {{ 'Claude' if ai_engine == 'claude' else 'the local reader' }} pulls out the main points: headline, summary, skills, years. Contact details are never kept</p>
+<form method="post" action="/profile/resume" enctype="multipart/form-data" class="hx-form">{{ csrf_input(request) }}
+<label class="hx-field hx-file"><i class="fa-solid fa-file-pdf"></i><span class="visually-hidden">CV as a PDF</span><input type="file" name="file" accept=".pdf,application/pdf" required></label>
+<p class="hx-hint">// max {{ max_upload_mb }} MB · virus-scanned · text PDFs (not scans)</p>
+<button class="hx-btn" data-busy="reading…"><span>upload &amp; extract</span><i class="fa-solid fa-wand-magic-sparkles"></i></button>
+</form>
+{% if profile and profile.resume_file %}<p class="hx-out hx-gap"><i class="fa-solid fa-circle-check"></i>CV on file · read by {{ 'Claude' if profile.extracted_by == 'claude' else 'local reader' }} · {{ at(profile.updated_at, '%d %b %Y') }}</p>{% endif %}
+<div class="hx-actions"><a href="/recommendations" class="hx-btn hx-btn-solid"><i class="fa-solid fa-bullseye"></i><span>see my matches</span></a></div>
+</div>
+</section>
+</div>
+</div>
+<div class="hx-gap">{% with start="/profile/review", poll="/profile/review/status", what="profile" %}{% include "_grow.html" %}{% endwith %}</div>
+</div>{% endblock %}
+{% block scripts %}<script src="{{ static('chartjs-4.4.7/chart.umd.min.js') }}"></script>{% endblock %}

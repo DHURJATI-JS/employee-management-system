@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="{{ lang or 'en' }}"{% if rtl %} dir="rtl"{% endif %}>
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ app_name }}{% endblock %} · {{ app_name }}</title>
+<link rel="icon" href="{{ static('img/favicon-32.png') }}" type="image/png" sizes="32x32">
+<link rel="icon" href="{{ static('img/favicon.svg') }}" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{ static('img/apple-touch-icon.png') }}">
+<script src="{{ asset('js/theme.js') }}"></script>
+<link rel="stylesheet" href="{{ static('mdb/css/mdb.min.css') }}">
+<link rel="stylesheet" href="{{ static('fontawesome/css/all.min.css') }}">
+<link rel="stylesheet" href="{{ asset('css/app.css') }}">
+</head>
+<body{% if user %} class="hx-has-side" data-presence="/ws/presence"{% if open_ai %} data-open-ai{% endif %}{% endif %}>{# logged in: app.js keeps one WebSocket open for presence (presence.py) #}
+<header class="hx-header mt-5" id="top">
+<nav class="hx-nav" aria-label="Main">
+<div class="hx-nav-side">
+<a href="/" class="hx-link{{ ' hx-active' if path == '/' }}" aria-label="home" title="home"><i class="fa-solid fa-house"></i><span class="hx-label">home</span></a>
+<a href="/companies/search" class="hx-link{{ ' hx-active' if path == '/companies/search' }}" aria-label="find companies" title="find companies"><i class="fa-solid fa-magnifying-glass"></i><span class="hx-label">companies</span></a>
+<a href="/shop" class="hx-link{{ ' hx-active' if path.startswith('/shop') }}" aria-label="shop" title="shop: products from companies here"><i class="fa-solid fa-bag-shopping"></i><span class="hx-label">shop</span></a>
+<a href="/#contact" class="hx-link hx-hide-xs" aria-label="contact" title="contact"><i class="fa-solid fa-envelope"></i><span class="hx-label">contact</span></a>
+<a href="/credits" class="hx-link{{ ' hx-active' if path == '/credits' }}" aria-label="credits" title="credits"><i class="fa-solid fa-heart"></i><span class="hx-label">credits</span></a>
+<a href="/terms" class="hx-link hx-hide-xs{{ ' hx-active' if path == '/terms' }}" aria-label="terms and conditions" title="terms &amp; conditions"><i class="fa-solid fa-scale-balanced"></i><span class="hx-label">terms</span></a>
+</div>
+{% set ai = ai_status() %}{# the local AI's state, shown by the sidebar's AI company finder link: green = vLLM + model ready, red = not available (grow.watch_ai, every 15 s) #}
+<div class="hx-nav-side hx-end">
+{% if languages %}<details class="hx-lang" data-lang-menu><summary class="hx-icon-btn hx-lang-btn" aria-label="Language: {{ languages[lang or 'en'][1] }}" title="language"><i class="fa-solid fa-language" aria-hidden="true"></i><b>{{ (lang or 'en')|upper }}</b></summary>
+<ul class="hx-lang-list" role="list">{% for code, (en_name, own) in languages.items() %}<li><form method="post" action="/language">{{ csrf_input(request) }}<input type="hidden" name="lang" value="{{ code }}"><button lang="{{ code }}"{{ ' aria-current=true' if code == (lang or 'en') }}><span>{{ own }}</span><small>{{ en_name }}</small></button></form></li>{% endfor %}</ul></details>{% endif %}
+<button type="button" id="hx-theme-toggle" class="hx-icon-btn" aria-label="Toggle theme"><i class="fa-solid fa-moon"></i><i class="fa-solid fa-sun"></i></button>
+{% if user %}
+<a href="/notifications" class="hx-icon-btn hx-bell{{ ' hx-active' if path == '/notifications' }}" aria-label="Notifications{{ ' (' ~ user.unread ~ ' new)' if user.unread }}" title="Notifications"><i class="fa-solid fa-bell"></i>{% if user.unread %}<b class="hx-bell-count">{{ user.unread if user.unread < 100 else '99+' }}</b>{% endif %}</a>
+<a href="/settings" class="hx-user" title="Settings: {{ user.username }}">{% if user.picture %}<img class="hx-user-pic" src="{{ user.picture }}" alt="" width="24" height="24">{% else %}<i class="fa-solid fa-user-secret"></i>{% endif %}<span class="hx-label">{{ user.username }}</span></a>
+<form method="post" action="/logout" class="d-inline-flex">{{ csrf_input(request) }}<button class="hx-icon-btn" aria-label="Log out" title="Log out"><i class="fa-solid fa-power-off"></i></button></form>
+{% else %}
+<a href="/login" class="hx-link{{ ' hx-active' if path == '/login' }}" aria-label="login"><i class="fa-solid fa-right-to-bracket"></i><span class="hx-label">login</span></a>
+<a href="/register" class="hx-link hx-cta{{ ' hx-active' if path == '/register' }}" aria-label="signup"><i class="fa-solid fa-user-plus"></i><span class="hx-label">signup</span></a>
+{% endif %}
+</div>
+</nav>
+</header>
+{% if user %}<aside class="hx-side" aria-label="Workspace">
+<a href="/settings" class="hx-side-user" title="Settings">{% if user.picture %}<img class="hx-avatar hx-avatar-img" src="{{ user.picture }}" alt="" width="40" height="40">{% else %}<span class="hx-avatar" aria-hidden="true">{{ initials(user.username) }}</span>{% endif %}<span><b>{{ user.username }}</b><small>{{ user.companies }} workplace{{ '' if user.companies == 1 else 's' }}</small></span></a>
+<form method="post" action="/assist" class="hx-assist hx-assist-side" role="search">{{ csrf_input(request) }}<label class="hx-field"><i class="fa-solid fa-wand-magic-sparkles"></i><span class="visually-hidden">Tell {{ app_name }} what to do</span><input name="q" data-assist placeholder="ask… (press /)" maxlength="200" autocomplete="off" spellcheck="false" required></label></form>
+<nav class="hx-side-nav">
+<a href="/dashboard" class="hx-side-link{{ ' hx-active' if path == '/dashboard' }}"><i class="fa-solid fa-gauge"></i><span>dashboard</span></a>
+{% if single_company() %}<span class="hx-side-link hx-disabled" aria-disabled="true" title="Single company mode: no company can be created"><i class="fa-solid fa-circle-plus"></i><span>create company</span><i class="fa-solid fa-lock hx-side-lock"></i></span>
+{% else %}<a href="/companies/new" class="hx-side-link{{ ' hx-active' if path == '/companies/new' }}"><i class="fa-solid fa-circle-plus"></i><span>create company</span></a>{% endif %}
+{% if single_company() and user.companies %}<span class="hx-side-link hx-disabled" aria-disabled="true" title="Single company mode: there's no other company to join"><i class="fa-solid fa-handshake"></i><span>join company</span><i class="fa-solid fa-lock hx-side-lock"></i></span>
+{% else %}<a href="/companies/join" class="hx-side-link{{ ' hx-active' if path.startswith('/companies/join') }}"><i class="fa-solid fa-handshake"></i><span>join company</span></a>{% endif %}
+{% if user.companies %}<a href="/workplaces" class="hx-side-link{{ ' hx-active' if path == '/workplaces' }}"><i class="fa-solid fa-briefcase"></i><span>view workplaces</span><b class="hx-side-count">{{ user.companies }}</b></a>
+{% else %}<span class="hx-side-link hx-disabled" aria-disabled="true" title="Join or create a company first"><i class="fa-solid fa-briefcase"></i><span>view workplaces</span><i class="fa-solid fa-lock hx-side-lock"></i></span>{% endif %}
+{% if single_company() %}<a href="/companies/search" class="hx-side-link hx-side-sep{{ ' hx-active' if path == '/companies/search' }}"><i class="fa-solid fa-building"></i><span>the company</span></a>
+{% else %}<a href="/companies/search" class="hx-side-link hx-side-sep{{ ' hx-active' if path == '/companies/search' }}"><i class="fa-solid fa-magnifying-glass"></i><span>find companies</span></a>{% endif %}
+{% if single_company() %}<span class="hx-side-link hx-disabled" aria-disabled="true" title="Single company mode: the AI company finder is off"><i class="fa-solid fa-wand-magic-sparkles"></i><span>AI company finder</span><i class="fa-solid fa-lock hx-side-lock"></i></span>
+{% else %}<a href="/find" class="hx-side-link{{ ' hx-active' if path == '/find' }}" data-mdb-modal-init data-mdb-target="#ai-find" aria-label="AI company finder · local AI {{ 'connected' if ai.ready else 'offline' }}" title="AI company finder · {{ ai.detail }}"><i class="fa-solid fa-wand-magic-sparkles"></i><span>AI company finder</span><i class="fa-solid {{ 'fa-circle-check hx-side-ai-up' if ai.ready else 'fa-plug-circle-xmark hx-side-ai-down' }} hx-side-lock" aria-hidden="true"></i></a>{% endif %}
+<a href="/people" class="hx-side-link{{ ' hx-active' if path == '/people' }}"><i class="fa-solid fa-users-viewfinder"></i><span>find people</span></a>
+{% if single_company() %}<span class="hx-side-link hx-disabled" aria-disabled="true" title="Single company mode: there's only one company, so AI matching is off"><i class="fa-solid fa-bullseye"></i><span>matched for you</span><i class="fa-solid fa-lock hx-side-lock"></i></span>
+{% else %}<a href="/recommendations" class="hx-side-link{{ ' hx-active' if path == '/recommendations' }}"><i class="fa-solid fa-bullseye"></i><span>matched for you</span></a>{% endif %}
+<a href="/profile" class="hx-side-link{{ ' hx-active' if path == '/profile' }}"><i class="fa-solid fa-file-pdf"></i><span>profile &amp; CV</span></a>
+<a href="/notifications" class="hx-side-link{{ ' hx-active' if path == '/notifications' }}"><i class="fa-solid fa-bell"></i><span>notifications</span>{% if user.unread %}<b class="hx-side-count">{{ user.unread }}</b>{% endif %}</a>
+{% if user.companies %}<a href="/tasks{{ '#meetings' if user.live }}" class="hx-side-link{{ ' hx-active' if path == '/tasks' }}"{{ ' title="a meeting you are invited to is on now"'|safe if user.live }}><i class="fa-solid fa-list-check"></i><span>tasks &amp; meetings</span>{% if user.live %}<b class="hx-side-count hx-side-live">live</b>{% elif user.tasks %}<b class="hx-side-count">{{ user.tasks }}</b>{% endif %}</a>
+<a href="/chats" class="hx-side-link{{ ' hx-active' if path.startswith('/chats') }}"><i class="fa-solid fa-comments"></i><span>chats</span><b class="hx-side-count" data-chat-count{{ ' hidden' if not user.chats }}>{{ user.chats }}</b></a>{% endif %}
+<a href="/friends" class="hx-side-link{{ ' hx-active' if path.startswith('/friends') }}"><i class="fa-solid fa-user-group"></i><span>friends</span><b class="hx-side-count" data-friend-count{{ ' hidden' if not user.friend_requests }}>{{ user.friend_requests }}</b></a>
+<a href="/shop/orders" class="hx-side-link{{ ' hx-active' if path.startswith('/shop/orders') or path == '/shop/cart' }}"><i class="fa-solid fa-bag-shopping"></i><span>my orders &amp; cart</span></a>
+<a href="/statements" class="hx-side-link{{ ' hx-active' if path == '/statements' }}"><i class="fa-solid fa-receipt"></i><span>statements</span></a>
+<a href="/settings" class="hx-side-link{{ ' hx-active' if path == '/settings' }}"><i class="fa-solid fa-gear"></i><span>settings</span></a>
+<a href="/credits" class="hx-side-link hx-side-sep{{ ' hx-active' if path == '/credits' }}"><i class="fa-solid fa-heart"></i><span>credits &amp; security</span></a>
+</nav>
+{% if user.monitored %}<p class="hx-side-track" title="Only whether this site is open and in use, inside your companies' working hours. Nothing you type or view is recorded."><i class="fa-solid fa-user-clock"></i><span>attendance on: active time here in working hours counts ({{ user.monitored }} workplace{{ '' if user.monitored == 1 else 's' }})</span></p>
+<button type="button" class="hx-side-os" data-idle-os title="Working in another app (VS Code…) with this site open in a tab counts as active: the browser only says whether the computer is in use, never what you do"><i class="fa-solid fa-display"></i><span>count work in other apps</span></button>{% endif %}
+<p class="hx-side-foot">// session re-checked against the database on every page</p>
+</aside>{% endif %}
+<main class="hx-main">
+{% set messages = get_flashed_messages(request) %}
+{# reminders on every page until done (system.load_user): your profile picture, then logos + minimum salaries of companies you own/co-own #}
+{% set tips = namespace(all=[]) %}{# a namespace: a plain set inside a for loop wouldn't survive the loop #}
+{% if user %}
+{% if not (user.region and user.tz) and path != '/settings' %}{% set tips.all = tips.all + [("fa-earth-asia", "Pick your region and time zone: times are shown in UTC and amounts only in their own currency until you do.", "/settings#region", "pick region")] %}{% endif %}
+{% if not user.bank and path != '/settings' %}{% set tips.all = tips.all + [("fa-building-columns", "Add your bank details: you need them to join or create a company, and to get paid.", "/settings#bank", "add bank details")] %}{% endif %}
+{% if not user.identity and path != '/settings' %}{% set tips.all = tips.all + [("fa-id-card", "Add your identity proof (your ID's number + a photo of it): everyone in a company needs one.", "/settings#identity", "add identity proof")] %}{% endif %}
+{% for cid, name in user.unproved %}{% set tips.all = tips.all + [("fa-file-shield", name ~ " has no identity proof yet: upload a photo of its registration document, or it can't pay salaries.", "/companies/" ~ cid ~ "/dashboard#finance", "add proof")] %}{% endfor %}
+{% if not user.picture and path != '/settings' %}{% set tips.all = tips.all + [("fa-user-astronaut", "Add a profile picture so colleagues and companies recognise you, and you get seen better.", "/settings", "add picture")] %}{% endif %}
+{% for cid, name in user.unpaid %}{% set tips.all = tips.all + [("fa-money-bill-wave", name ~ " has no minimum salaries: every position it offers needs one.", "/workplaces#edit-" ~ cid, "set salaries")] %}{% endfor %}
+{% for cid, name in user.bare %}{% set tips.all = tips.all + [("fa-image", name ~ " has no logo yet: add one so it gets seen better in search.", "/workplaces#c-" ~ cid, "add logo")] %}{% endfor %}
+{% endif %}{% set nudges = tips.all %}
+{% block first %}{% endblock %}{# above the tips: what a page wants seen before anything else #}
+{% if nudges %}<div class="hx-alerts">
+{% for icon, text, href, go in nudges[:3] %}
+<div class="alert hx-alert hx-flash-nudge" role="alert">
+<i class="fa-solid {{ icon }}"></i>
+<span class="hx-msg"><b>[tip]</b> {{ text }} <a href="{{ href }}" class="hx-nudge-go">{{ go }} →</a></span>
+<button type="button" class="hx-close" data-flash-close aria-label="Close tip"><i class="fa-solid fa-xmark"></i></button>
+</div>
+{% endfor %}
+</div>{% endif %}
+{% block content %}{% endblock %}
+</main>
+<footer class="hx-footer">
+<div class="hx-foot">
+<div class="hx-foot-grid">
+<section class="hx-foot-brand" aria-label="{{ app_name }}">
+<a href="/" class="hx-foot-logo"><i class="fa-solid fa-terminal"></i><b>{{ app_name }}</b><span class="hx-cursor" aria-hidden="true">_</span></a>
+<p>AI employee management: hiring with full applicant files, live attendance, {{ cycle_days }}-day payroll with payslips and receipts, and a payroll guard that protects what employees have earned.</p>
+<ul class="hx-foot-facts">
+<li><i class="fa-solid {{ 'fa-circle-check hx-on-hours' if ai.ready else 'fa-plug-circle-xmark hx-off-hours' }}"></i><span>local AI {{ 'connected' if ai.ready else 'offline' }}: {{ ai.detail }}</span></li>
+<li><i class="fa-solid fa-shield-halved"></i><span>nonce-only CSP · bank &amp; ID numbers encrypted (AES-256) · every upload virus-scanned</span></li>
+<li><i class="fa-solid fa-envelope"></i><span><a href="mailto:{{ contact_email }}">{{ contact_email }}</a></span></li>
+</ul>
+</section>
+<nav class="hx-foot-col" aria-label="Workspace"><h2>// workspace</h2><ul>
+{% if user %}<li><a href="/dashboard"><i class="fa-solid fa-gauge"></i>dashboard</a></li><li><a href="/workplaces"><i class="fa-solid fa-briefcase"></i>workplaces</a></li>
+<li><a href="/statements"><i class="fa-solid fa-receipt"></i>statements</a></li><li><a href="/notifications"><i class="fa-solid fa-bell"></i>notifications</a></li>
+<li><a href="/settings"><i class="fa-solid fa-gear"></i>settings</a></li>
+{% else %}<li><a href="/login"><i class="fa-solid fa-right-to-bracket"></i>log in</a></li><li><a href="/register"><i class="fa-solid fa-user-plus"></i>sign up</a></li>
+<li><a href="/"><i class="fa-solid fa-house"></i>what {{ app_name }} does</a></li>{% endif %}</ul></nav>
+<nav class="hx-foot-col" aria-label="Discover"><h2>// discover</h2><ul>
+{# signed out: only pages anyone can open (the rest need a login, so they're hidden until then) #}
+<li><a href="/companies/search"><i class="fa-solid fa-magnifying-glass"></i>{{ 'the company' if single_company() else 'find companies' }}</a></li>
+{% if user %}{% if not single_company() %}<li><a href="/recommendations"><i class="fa-solid fa-bullseye"></i>matched for you</a></li>{% endif %}
+<li><a href="/people"><i class="fa-solid fa-users-viewfinder"></i>find people</a></li>{% if not single_company() %}<li><a href="/companies/new"><i class="fa-solid fa-circle-plus"></i>create a company</a></li>{% endif %}
+{% if not (single_company() and user.companies) %}<li><a href="/companies/join"><i class="fa-solid fa-handshake"></i>join with a code</a></li>{% endif %}
+{% else %}<li><span><i class="fa-solid fa-building-circle-check"></i>every listed company's location and registration is verified</span></li>{% endif %}</ul></nav>
+<nav class="hx-foot-col" aria-label="Payroll and people"><h2>// payroll &amp; people</h2><ul>
+{% if user %}<li><a href="/settings#bank"><i class="fa-solid fa-building-columns"></i>bank details</a></li><li><a href="/settings#identity"><i class="fa-solid fa-id-card"></i>identity proof</a></li>
+<li><a href="/profile"><i class="fa-solid fa-file-pdf"></i>profile, skills &amp; CV</a></li><li><a href="/statements"><i class="fa-solid fa-file-invoice-dollar"></i>payslips &amp; receipts</a></li>
+{% else %}<li><span><i class="fa-solid fa-calendar-check"></i>salaries {{ cycle_every }}, with payslips and receipts</span></li>
+<li><span><i class="fa-solid fa-user-clock"></i>live attendance in working hours (at most 8 a day)</span></li>{% endif %}
+<li><span><i class="fa-solid fa-robot"></i>payout rules are AI-written: check official sources</span></li></ul></nav>
+<nav class="hx-foot-col" aria-label="Trust and help"><h2>// trust &amp; help</h2><ul>
+<li><a href="/credits"><i class="fa-solid fa-heart"></i>credits &amp; security</a></li><li><a href="/terms"><i class="fa-solid fa-scale-balanced"></i>terms &amp; conditions</a></li><li><a href="/#contact"><i class="fa-solid fa-life-ring"></i>contact &amp; support</a></li>
+<li><a href="mailto:{{ contact_email }}?subject={{ (app_name ~ ' security report')|urlencode }}"><i class="fa-solid fa-bug"></i>report a security issue</a></li>
+<li><span><i class="fa-solid fa-scale-balanced"></i>joining &amp; leaving need approval; leaving needs a settled salary</span></li></ul></nav>
+</div>
+<div class="hx-status">
+<span class="hx-seg hx-seg-mode"><i class="fa-solid fa-robot"></i>{{ app_name|lower }}</span>
+<span class="hx-seg hx-seg-path"><i class="fa-solid fa-code-branch"></i>~{{ path }}</span>
+<span class="hx-seg-fill"></span>
+<span class="hx-seg hx-seg-clock"><i class="fa-regular fa-clock"></i><time id="hx-clock">--:--:--</time></span>
+<span class="hx-seg hx-seg-copy">&copy; {{ year }} {{ app_name }}</span>
+</div>
+<p class="hx-foot-note">// all rights reserved <span aria-hidden="true">·</span> built with fastapi, postgres + pgvector, redis, clamav, vllm, leaflet &amp; geoapify <span aria-hidden="true">·</span> <a href="/#contact">contact</a> <span aria-hidden="true">·</span> <a href="/terms">terms</a> <span aria-hidden="true">·</span> <a href="/credits">credits &amp; security</a> <span aria-hidden="true">·</span> <a href="#top"><i class="fa-solid fa-angle-up"></i> top</a></p>
+</div>
+</footer>
+{# MDB modals go here: directly under <body>, outside <main>'s page animation (a transform/opacity animation on an ancestor traps a fixed modal under its own backdrop) #}
+{% block modals %}{% endblock %}
+{% if user and not single_company() %}{# the AI company finder (the sidebar's link opens it): a prompt in plain words -> /find (finder.py). data-no-reopen: the results page shouldn't reopen it. Off in single company mode #}
+{% set find_examples = ["a python company that pays me 10k-15k INR a month, pays out in USD and lets me work for other companies", "freelance design work in Pune, at most 6 hours a day, no weekends", "backend developer job paying at least $2,000 a month where I can become a manager"] %}
+<div class="modal fade hx-modal" id="ai-find" tabindex="-1" aria-labelledby="ai-find-title" aria-hidden="true">
+<div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+<div class="modal-header hx-term-bar"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><h2 class="modal-title hx-term-title" id="ai-find-title">~/find · AI company finder</h2>
+<button type="button" class="hx-icon-btn hx-modal-x" data-mdb-dismiss="modal" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
+<div class="modal-body">
+<p class="{{ 'hx-hint hx-ok' if ai.ready else 'hx-err-msg' }}"><i class="fa-solid {{ 'fa-circle-check' if ai.ready else 'fa-plug-circle-xmark' }}"></i> {{ ai.detail }}{{ '' if ai.ready else ': rules still read amounts, currencies, hours and the rest' }}</p>
+<form method="post" action="/find" class="hx-form" id="ai-find-form" data-find data-no-reopen>{{ csrf_input(request) }}
+<label class="hx-field hx-area"><i class="fa-solid fa-wand-magic-sparkles"></i><span class="visually-hidden">What kind of company are you looking for?</span><textarea name="prompt" rows="4" minlength="3" maxlength="500" placeholder="say it your way, e.g. {{ find_examples[0] }}" data-find-prompt required></textarea></label>
+<div class="hx-find-examples">{% for e in find_examples %}<button type="button" class="hx-btn hx-btn-sm hx-btn-ghost" data-find-example="{{ e }}"><i class="fa-solid fa-lightbulb"></i><span>{{ e|truncate(60) }}</span></button>{% endfor %}</div>
+<p class="hx-hint">// the kind of work, pay in any currency (compared at today's rate), the currency it pays in, other jobs, freelancing, a city, working hours, a role to grow into. I'll also tell you what you left out. Enter to search · nothing you type is stored</p>
+</form>
+</div>
+<div class="modal-footer"><button type="button" class="hx-btn hx-btn-ghost" data-mdb-dismiss="modal"><span>cancel</span></button>
+<button class="hx-btn hx-btn-solid" form="ai-find-form" data-busy="thinking…"><span>find companies</span><i class="fa-solid fa-arrow-right"></i></button></div>
+</div></div></div>{% endif %}
+{% if user %}{# the chat drawer (app.js "the chat drawer"): every chat of yours, company + personal + the Deminic AI, live, on every page once logged in (user asked).
+   Company chats are labelled "company chat · <company>" (its owner, co-owners, managers and HR can read them); personal ones aren't (only the two of you) #}
+<button type="button" class="hx-chat-fab" data-drawer-open aria-controls="chat-drawer" aria-expanded="false" aria-label="Chats{{ ' (' ~ user.chats ~ ' unread)' if user.chats }}" title="chats"><i class="fa-solid fa-comments" aria-hidden="true"></i><span class="hx-chat-fab-ping" aria-hidden="true"></span><b class="hx-chat-fab-count" data-chat-count{{ ' hidden' if not user.chats }}>{{ user.chats }}</b></button>
+<div class="hx-drawer-shade" data-drawer-shade hidden></div>
+<section class="hx-drawer" id="chat-drawer" role="dialog" aria-modal="true" aria-labelledby="chat-drawer-title" data-drawer data-app="{{ app_name }}" hidden>
+<header class="hx-term-bar hx-drawer-bar"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><h2 class="hx-term-title" id="chat-drawer-title">~/chats · live <i class="fa-solid fa-lock" aria-hidden="true"></i> encrypted at rest</h2>
+<a href="/chats" class="hx-icon-btn" title="all chats as a page" aria-label="Open the chats page"><i class="fa-solid fa-up-right-from-square"></i></a>
+<button type="button" class="hx-icon-btn" data-drawer-close aria-label="Close chats" title="close (Esc)"><i class="fa-solid fa-xmark"></i></button></header>
+<div class="hx-drawer-main">
+<div class="hx-dw-side">
+<div class="hx-dw-tools">
+<label class="hx-field"><i class="fa-solid fa-magnifying-glass"></i><span class="visually-hidden">Search chats and people</span><input type="search" data-dw-filter placeholder="search chats + people…" autocomplete="off" spellcheck="false" maxlength="60"></label>
+<div class="hx-dw-tabs" role="group" aria-label="Which chats"><button type="button" class="hx-dw-tab" data-dw-tab="all" aria-pressed="true">all</button><button type="button" class="hx-dw-tab" data-dw-tab="company" aria-pressed="false"><i class="fa-solid fa-building" aria-hidden="true"></i> company</button><button type="button" class="hx-dw-tab" data-dw-tab="personal" aria-pressed="false"><i class="fa-solid fa-user-lock" aria-hidden="true"></i> personal</button></div>
+</div>
+<button type="button" class="hx-dw-chat hx-dw-ai" data-dw-ai title="your own AI chat: only you can read it"><span class="hx-chat-ic" aria-hidden="true"><i class="fa-solid fa-robot"></i></span><span class="hx-dw-main"><span class="hx-dw-tag"><i class="fa-solid fa-user-lock" aria-hidden="true"></i> private · only you</span><span class="hx-dw-top"><b class="hx-dw-name">{{ app_name }} AI</b></span><small class="hx-dw-last">ask anything: it remembers this chat and can do things for you</small></span></button>
+<ul class="hx-dw-chats" data-dw-chats aria-label="Your chats"><li class="hx-dw-none"><i class="fa-solid fa-spinner fa-spin"></i> loading…</li></ul>
+<p class="hx-eyebrow hx-dw-head">// start a chat · <a href="/friends">friends</a> · <a href="/chats#personal">new personal group</a></p>
+<ul class="hx-dw-people" data-dw-people aria-label="People you can message"></ul>
+</div>
+<div class="hx-dw-conv">
+<div class="hx-dw-empty" data-dw-none><i class="fa-solid fa-comments" aria-hidden="true"></i><p>Pick a chat, or start one with someone you work with.</p>
+<small><b>company chat · name</b> = a chat inside that company: its owner, co-owners, managers and HR can read it. No label = a personal chat: only the two of you can read it.</small></div>
+<div class="hx-dw-open" data-dw-open hidden>
+<header class="hx-dw-convhead"><button type="button" class="hx-icon-btn hx-dw-back" data-dw-back aria-label="Back to all chats"><i class="fa-solid fa-arrow-left"></i></button>
+<span class="hx-chat-ic" aria-hidden="true"><i class="fa-solid fa-user" data-dw-icon></i></span>
+<span class="hx-dw-who"><span data-dw-title></span><small data-dw-sub></small></span>
+<button type="button" class="hx-icon-btn" data-dw-clear hidden title="clear this conversation" aria-label="Clear your conversation with the AI"><i class="fa-solid fa-broom"></i></button>
+<a class="hx-icon-btn" data-dw-full href="/chats" title="open as a page" aria-label="Open this chat as a page"><i class="fa-solid fa-expand"></i></a></header>
+<p class="hx-dw-readers"><i class="fa-solid fa-eye" aria-hidden="true" data-dw-eye></i><span data-dw-readers></span></p>
+<ol class="hx-chat-msgs hx-dw-msgs" data-dw-msgs aria-live="polite" tabindex="0" aria-label="Messages"></ol>
+<div class="hx-ai-pending" data-dw-pending hidden></div>
+<form class="hx-dw-compose" data-dw-form method="post" action="/chats">{{ csrf_input(request) }}
+<label class="hx-icon-btn hx-dw-attach" title="send files or pictures, up to 5 at once (virus-scanned; what's typed goes with the first). You can also drop them here or paste a screenshot"><i class="fa-solid fa-paperclip" aria-hidden="true"></i><span class="visually-hidden">Send files</span><input type="file" class="visually-hidden" data-dw-file multiple></label>
+<button type="button" class="hx-icon-btn hx-dw-web" data-dw-web aria-pressed="false" hidden title="search the web for my questions (only the search words go to DuckDuckGo)"><i class="fa-solid fa-globe" aria-hidden="true"></i><span class="visually-hidden">Search the web</span></button>
+<label class="hx-field hx-area"><span class="visually-hidden">Message</span><textarea name="body" rows="1" maxlength="2000" placeholder="message… (Enter sends, Shift+Enter: new line)" data-dw-input required></textarea></label>
+<button class="hx-btn hx-btn-solid hx-dw-send" aria-label="Send" title="send (Enter)"><i class="fa-solid fa-paper-plane"></i></button></form>
+<p class="hx-dw-ro" data-dw-ro hidden><i class="fa-solid fa-user-shield"></i> you can read this chat, but only the people in it can write</p>
+<p class="hx-dw-ro" data-dw-off hidden><i class="fa-solid fa-plug-circle-xmark"></i> <span></span></p>
+</div>
+</div>
+</div>
+</section>{% endif %}
+{# flash messages as toasts: top right (bottom on phones), above every dialog; x closes one, each closes itself after 10 s (app.js) #}
+{% if messages %}<div class="hx-toasts" aria-live="polite">{% for category, message in messages %}
+<div class="alert hx-alert hx-toast hx-flash-{{ category }}" role="alert" data-toast>
+<i class="fa-solid {{ {'error': 'fa-triangle-exclamation', 'success': 'fa-check'}.get(category, 'fa-circle-info') }}"></i>
+<span class="hx-msg"><b>{{ {'error': '[err]', 'success': '[ok]'}.get(category, '[info]') }}</b> {{ message }}</span>
+<button type="button" class="hx-close" data-flash-close aria-label="Close message"><i class="fa-solid fa-xmark"></i></button>
+<span class="hx-toast-bar" aria-hidden="true"></span></div>{% endfor %}</div>{% endif %}
+<script src="{{ static('mdb/js/mdb.umd.min.js') }}"></script>
+{% block scripts %}{% endblock %}{# page libraries loaded before app.js: e.g. Chart.js (vendored, static/chartjs-4.4.7) on the pages with charts #}
+<script src="{{ asset('js/app.js') }}"></script>
+</body>
+</html>

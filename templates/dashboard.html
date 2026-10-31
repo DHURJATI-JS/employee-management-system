@@ -1,0 +1,64 @@
+{% extends "base.html" %}{% from "_avatar.html" import logo %}
+{# routers/companies.py dashboard(): memberships (with company + members loaded), approaches (open job offers, company loaded), positions (the master dict) #}
+{% block title %}Dashboard{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/dashboard</span><span class="hx-term-meta"><i class="fa-solid fa-circle-check"></i> session ok</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>whoami</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-out"><i class="fa-solid fa-user-secret"></i>{{ user.username }}<span class="hx-badge">{{ memberships|length }} workplace{{ '' if memberships|length == 1 else 's' }}</span></p>
+<form method="post" action="/assist" class="hx-assist hx-assist-main" role="search">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-wand-magic-sparkles"></i><span class="visually-hidden">Tell {{ app_name }} what to do</span><span class="hx-pfx" aria-hidden="true">&gt;</span><input name="q" data-assist placeholder="tell me what to do, in one line…" maxlength="200" autocomplete="off" spellcheck="false" required></label>
+<button class="hx-icon-btn" aria-label="Go"><i class="fa-solid fa-arrow-right"></i></button>
+</form>
+{% set solo = single_company() %}{# single company mode (the admin's switch): creating, finding and matching companies are off, shown locked #}
+<div class="hx-chips hx-examples" aria-label="Examples">{% for e, off in [("create a company called Acme", solo), ("join company <code>", False), ("find companies hiring python developers", solo), ("recommend companies for me", solo), ("upload my resume", False), ("promote ben to manager", False), ("add a position", False)] %}{% if off %}<button type="button" class="hx-pos hx-example" disabled title="off in single company mode"><i class="fa-solid fa-lock"></i>{{ e }}</button>{% else %}<button type="button" class="hx-pos hx-example" data-fill="{{ e }}"><i class="fa-solid fa-terminal"></i>{{ e }}</button>{% endif %}{% endfor %}</div>
+</div>
+</section>
+{% if approaches %}<section class="hx-section">
+<p class="hx-eyebrow">// job offers for you <a href="/notifications" class="hx-eyebrow-link">open notifications →</a></p>
+<div class="row g-4">{% for a in approaches %}
+<div class="col-md-6"><article class="hx-card hx-reveal hx-approach">{{ logo(a.company, 'fa-paper-plane') }}
+<h2>{{ a.company.name }}</h2>{% if a.salary_amount %}<p class="hx-offer-line"><i class="fa-solid fa-money-bill-wave"></i> {{ '{:,}'.format(a.salary_amount) }} {{ a.salary_currency }} per {{ a.salary_period }}</p>{% endif %}
+<p>{{ a.message|truncate(160) if a.message else (a.company.description|truncate(160) if a.company.description else 'would like you to join.') }}</p>
+<p class="hx-hint">// offered {{ a.created_at|tenure }} ago</p>
+<div class="hx-row-actions"><a href="/companies/join/{{ a.company_id }}" class="hx-btn hx-btn-sm hx-btn-solid"><span>view &amp; join</span><i class="fa-solid fa-arrow-right"></i></a>
+<form method="post" action="/approaches/{{ a.company_id }}/dismiss">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><span>decline</span></button></form></div>
+</article></div>{% endfor %}</div>
+</section>{% endif %}
+{% if not memberships %}
+<section class="hx-section">
+<p class="hx-eyebrow">// you're not in a company yet: pick one to get started</p>
+<div class="row g-4">
+{% if solo %}<div class="col-md-6"><div class="hx-card hx-option hx-option-off" aria-disabled="true"><span class="hx-icon"><i class="fa-solid fa-lock"></i></span>
+<h2>Create a company</h2><p>Off: {{ app_name }} is in single company mode, so no company can be created.</p></div></div>
+{% else %}<div class="col-md-6"><a href="/companies/new" class="hx-card hx-option hx-reveal"><span class="hx-icon"><i class="fa-solid fa-building"></i></span>
+<h2>Create a company</h2><p>Set up your workplace, choose which positions it offers, then share its code with your team.</p><span class="hx-option-go">./create <i class="fa-solid fa-arrow-right"></i></span></a></div>{% endif %}
+<div class="col-md-6"><a href="/companies/join" class="hx-card hx-option hx-reveal"><span class="hx-icon"><i class="fa-solid fa-handshake"></i></span>
+<h2>Join a company</h2><p>Got a company code from your team? Enter it to join as a rookie; the owner or a co-owner can promote you.</p><span class="hx-option-go">./join <i class="fa-solid fa-arrow-right"></i></span></a></div>
+{% if solo %}<div class="col-md-6"><a href="/companies/search" class="hx-card hx-option hx-reveal"><span class="hx-icon"><i class="fa-solid fa-building"></i></span>
+<h2>The company</h2><p>{{ app_name }} runs for one company: see it and ask to join it.</p><span class="hx-option-go">./open <i class="fa-solid fa-arrow-right"></i></span></a></div>
+<div class="col-md-6"><div class="hx-card hx-option hx-option-off" aria-disabled="true"><span class="hx-icon"><i class="fa-solid fa-lock"></i></span>
+<h2>Find or match companies</h2><p>Off: in single company mode there's nothing to search, and the AI company finder and matching are switched off.</p></div></div>
+{% else %}<div class="col-md-6"><a href="/companies/search" class="hx-card hx-option hx-reveal"><span class="hx-icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+<h2>Find a company</h2><p>No code? Search listed companies by what they do and who they're hiring, then join one.</p><span class="hx-option-go">./search <i class="fa-solid fa-arrow-right"></i></span></a></div>
+<div class="col-md-6"><a href="/recommendations" class="hx-card hx-option hx-reveal"><span class="hx-icon"><i class="fa-solid fa-bullseye"></i></span>
+<h2>Let the AI match you</h2><p>Upload your CV as a PDF (or type your skills) and get companies ranked by how well they fit your profile.</p><span class="hx-option-go">./match <i class="fa-solid fa-arrow-right"></i></span></a></div>{% endif %}
+</div>
+</section>
+{% else %}
+<section class="hx-section">
+<p class="hx-eyebrow">// your workplaces</p>
+<div class="row g-4">
+{% for m in memberships %}{% set pos = positions[m.position] %}
+<div class="{{ 'col-12' if solo else 'col-md-6 col-lg-4' }}"><a href="/workplaces#c-{{ m.company.id }}" class="hx-card hx-option hx-reveal{{ ' hx-option-solo' if solo }}">{{ logo(m.company, pos.icon) }}
+<h2>{{ m.company.name }}</h2><p>{{ pos.label }} · {{ m.company.members|length }} member{{ '' if m.company.members|length == 1 else 's' }}</p><span class="hx-option-go">./open <i class="fa-solid fa-arrow-right"></i></span></a></div>
+{% endfor %}
+</div>
+{% if solo %}<div class="hx-actions">{% for icon, text in (("fa-circle-plus", "create another"), ("fa-handshake", "join another"), ("fa-magnifying-glass", "find companies"), ("fa-bullseye", "matched for you")) %}<span class="hx-btn hx-btn-off" aria-disabled="true" title="off in single company mode"><i class="fa-solid fa-lock"></i><span>{{ text }}</span></span>{% endfor %}</div>
+<p class="hx-hint">// single company mode: {{ app_name }} runs for one company, so creating, joining another, finding and matching companies are off</p>
+{% else %}<div class="hx-actions"><a href="/companies/new" class="hx-btn"><i class="fa-solid fa-circle-plus"></i><span>create another</span></a><a href="/companies/join" class="hx-btn"><i class="fa-solid fa-handshake"></i><span>join another</span></a>
+<a href="/companies/search" class="hx-btn"><i class="fa-solid fa-magnifying-glass"></i><span>find companies</span></a><a href="/recommendations" class="hx-btn"><i class="fa-solid fa-bullseye"></i><span>matched for you</span></a></div>{% endif %}
+</section>
+{% endif %}
+</div>{% endblock %}

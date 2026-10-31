@@ -1,0 +1,31 @@
+{% extends "base.html" %}{% from "_avatar.html" import avatar %}
+{# routers/people.py person_page(): the basic profile of someone you chat with who isn't a colleague (user's rule): someone (their account), profile (or None), k (their names), friend, chat (the chat you came from, or None).
+   Never their email, phone, age, CV, ID, workplaces or the pay they want: a colleague's name opens member.html, with its own limits #}
+{% block title %}{{ someone.username }}{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/people/{{ someone.username }}</span><span class="hx-term-meta"><i class="fa-solid fa-comments"></i> chat contacts</span></div>
+<div class="hx-term-body">
+<div class="hx-member-head">{{ avatar(someone.id, someone.username, 'hx-avatar-lg') }}
+<div><h1 class="hx-title"><span data-type>{{ someone.username }}</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// {{ profile.headline if profile and profile.headline else 'no headline yet' }}</p></div></div>
+<div class="row g-3">
+<div class="col-sm-6 col-lg"><div class="hx-fact"><small>name on their ID</small><b><i class="fa-solid fa-id-card"></i>{{ k.real ~ (' ✓' if k.verified else '') if k.real else 'not given' }}</b></div></div>
+<div class="col-sm-6 col-lg"><div class="hx-fact"><small>experience</small><b><i class="fa-solid fa-briefcase"></i>{{ (profile.years ~ ' year' ~ ('' if profile.years == 1 else 's')) if profile and profile.years else 'not given' }}</b></div></div>
+{% if friend %}<div class="col-sm-6 col-lg"><div class="hx-fact"><small>you are</small><b><i class="fa-solid fa-user-group"></i>friends</b></div></div>{% endif %}
+</div>
+{% if chat %}<div class="hx-row-actions hx-gap"><a href="/chats/{{ chat }}#end" class="hx-btn hx-btn-sm"><i class="fa-solid fa-arrow-left"></i><span>back to the chat</span></a></div>{% endif %}
+</div>
+</section>
+<section class="hx-section">
+<article class="hx-card hx-member-card">
+<p class="hx-eyebrow">// profile</p>
+{% if profile and (profile.bio or profile.skills) %}
+{% if profile.bio %}<p class="hx-about">{{ profile.bio }}</p>{% endif %}
+{% if profile.skills %}<div class="hx-chips hx-gap-sm">{% for s in profile.skills %}<span class="hx-pos"><i class="fa-solid fa-microchip"></i>{{ s }}</span>{% endfor %}</div>{% endif %}
+<p class="hx-hint hx-gap">// updated {{ at(profile.updated_at, '%d %b %Y') }}</p>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-ghost"></i>{{ someone.username }} hasn't filled in a profile yet.</p>{% endif %}
+<p class="hx-hint hx-gap">// only people {{ someone.username }} chats with and their friends can open this page. It never shows their email, phone, age, CV or workplaces</p>
+</article>
+</section>
+</div>{% endblock %}

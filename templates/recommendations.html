@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{# routers/discover.py recommendations(): profile (None = nothing to match yet), rows = [{company, match, why}] nearest to the profile's pgvector embedding #}
+{% block title %}Recommended for you{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/recommendations</span><span class="hx-term-meta"><i class="fa-solid fa-vector-square"></i> pgvector</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>match --profile me --companies listed</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+{% if profile %}<p class="hx-sub">// your profile is a vector; these listed companies (that you're not in yet) are the nearest to it</p>
+<p class="hx-out"><i class="fa-solid fa-id-card"></i>{{ profile.headline or 'no headline' }}{% if profile.years %} · {{ profile.years }} yrs{% endif %}<a href="/profile" class="hx-badge hx-badge-link">edit profile</a></p>
+{% if profile.skills %}<div class="hx-chips hx-gap-sm">{% for s in profile.skills[:16] %}<span class="hx-pos"><i class="fa-solid fa-microchip"></i>{{ s }}</span>{% endfor %}</div>{% endif %}
+<p class="hx-hint hx-gap-sm">// {% if profile.wants() %}salary you want: <b class="hx-want-b">{{ profile.wants() }}</b>: companies that pay it come first · <a href="/profile#salary">change</a>{% else %}tell me the salary you want (<a href="/profile#salary">on your profile</a>, or in the bar: "I want 50k to 80k a month") and companies that pay it come first{% endif %}</p>
+{% else %}<p class="hx-sub">// tell me about you first: upload your CV as a PDF or type your skills, and I'll match you with companies</p>
+<div class="hx-actions"><a href="/profile" class="hx-btn hx-btn-solid"><i class="fa-solid fa-file-pdf"></i><span>upload CV / fill profile</span></a><a href="/companies/search" class="hx-btn"><i class="fa-solid fa-magnifying-glass"></i><span>search instead</span></a></div>{% endif %}
+</div>
+</section>
+{% if profile %}<section class="hx-section">
+<p class="hx-eyebrow">// {{ rows|length }} recommendation{{ '' if rows|length == 1 else 's' }}, best first</p>
+{% if rows %}<div class="row g-4">{% for row in rows %}<div class="col-md-6">{% include "_company_card.html" %}</div>{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-ghost"></i>No listed companies to recommend yet (or you're already in all of them). <a href="/companies/search">Browse companies</a></p>{% endif %}
+</section>{% endif %}
+</div>{% endblock %}

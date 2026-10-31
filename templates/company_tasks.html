@@ -1,0 +1,84 @@
+{% extends "base.html" %}{% from "_meeting.html" import meeting_row with context %}
+{# routers/tasks.py company_tasks(): c, me, tasker (may give tasks + schedule meetings), people (members you can give tasks to: ranked below you), batch (form blocks), tz, now_local,
+   top (owner / co-owner: may cancel any task), tasks = [{t, who [(TaskAssignee, username)], when (deadline, company clock), late, mine (your TaskAssignee or None)}],
+   meet = meet.company_meetings() {soon, past, live}, colleagues (everyone else: meeting invites), durations, captions (Whisper status) #}
+{% block title %}Tasks · {{ c.name }}{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/companies/{{ c.name }}/tasks</span><span class="hx-term-meta"><i class="fa-solid fa-list-check"></i> {{ tasks|length }} task{{ '' if tasks|length == 1 else 's' }}</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>tasks {{ c.name }}</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// {{ "give tasks to people ranked below you (" ~ positions[me.position].label ~ "): several at once, each with a deadline; they're notified and emailed" if tasker else "the tasks you've been given here: mark them done when they are" }} · <a href="/companies/{{ c.id }}/dashboard">company dashboard</a> · <a href="/tasks">all my tasks</a></p>
+</div>
+</section>
+<section class="hx-section" id="meetings">
+<div class="hx-meet-head"><p class="hx-eyebrow">// meetings · video calls with screen sharing, chat, live English captions, recording and AI notes · one call at a time</p>
+{% if tasker %}<button type="button" class="hx-btn hx-btn-solid" data-mdb-modal-init data-mdb-target="#meet-new"><i class="fa-solid fa-video"></i><span>new meeting</span></button>{% endif %}</div>
+{% if meet.soon %}<div class="hx-meet-list">{% for x in meet.soon %}{{ meeting_row(x.m, x.shut, people=x.people, invited=x.invited) }}{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-video-slash"></i><span>{{ 'No meetings coming up. Press “new meeting” to schedule one or start one now: the people you invite get a notification and an email.' if tasker else 'No meetings coming up for you here: you see the ones you are invited to.' }}</span></p>{% endif %}
+{% if meet.past %}<details class="hx-meet-past"><summary class="hx-eyebrow">// past meetings · {{ meet.past|length }} · recordings, captions, chat and notes <i class="fa-solid fa-chevron-down"></i></summary>
+<div class="hx-meet-list">{% for x in meet.past %}{{ meeting_row(x.m, x.shut, people=x.people, invited=x.invited, parts=x.parts) }}{% endfor %}</div></details>{% endif %}
+<p class="hx-hint hx-gap-sm">// only the people invited can join · afterwards they and {{ c.name }}'s owner, co-owners, managers and HR can open the meeting's record (recording, captions, chat, notes){% if not captions.ready %} · <span class="hx-off-hours">captions are off right now: {{ captions.detail }}</span>{% endif %}</p>
+</section>
+{% if tasker %}<section class="hx-section" id="give">
+<p class="hx-eyebrow">// give tasks · deadlines on {{ c.name }}'s clock ({{ tz }})</p>
+<p class="hx-hint">// tasks can only be given in working hours ({{ hours }} {{ tz }}{{ your_hours(c) }}) on a working day that isn't a public holiday; each deadline must be in working hours on such a day, and not on a national holiday of anyone it's for</p>
+{% if closed %}<p class="hx-err-msg"><i class="fa-solid fa-moon"></i> {{ closed }} Next chance: <b>{{ next_open }}</b>.</p>{% endif %}
+{% if people %}<form method="post" action="/companies/{{ c.id }}/tasks" class="hx-form hx-task-form" data-task-form>{{ csrf_input(request) }}<fieldset class="hx-plain"{{ ' disabled' if closed }}>
+{% for i in batch %}<fieldset class="hx-fieldset hx-task-block" data-task-block{{ ' hidden' if i > 0 }}><legend class="hx-hint">// task {{ i + 1 }}</legend>
+<label class="hx-field"><i class="fa-solid fa-heading"></i><span class="visually-hidden">Task {{ i + 1 }} title</span><input name="t{{ i }}_title" maxlength="120" placeholder="title, e.g. write the payroll API tests"{{ ' required' if i == 0 }}{% if i == 0 and prefill.title %} value="{{ prefill.title }}"{% endif %}></label>
+<label class="hx-field hx-area"><i class="fa-solid fa-align-left"></i><span class="visually-hidden">Task {{ i + 1 }} description</span><textarea name="t{{ i }}_description" rows="2" maxlength="2000" placeholder="description: what done looks like, links, notes (optional)"></textarea></label>
+<label class="hx-field"><i class="fa-solid fa-hourglass-end"></i><span class="visually-hidden">Task {{ i + 1 }} deadline ({{ tz }})</span><span class="hx-pfx" aria-hidden="true">deadline:</span><input type="datetime-local" name="t{{ i }}_deadline" min="{{ now_local }}"{{ ' required' if i == 0 }}></label>
+<div class="hx-task-who"><p class="hx-eyebrow">// for</p>
+<label class="visually-hidden" for="t{{ i }}-ai">Who picks the people for task {{ i + 1 }}</label><select name="t{{ i }}_ai" id="t{{ i }}-ai" class="hx-select hx-select-lg" data-ai-pick title="the AI goes by what the task says, against each person's skills and CV, then their reviews, how reliably they finish and how much they already have"><option value="0">I'll pick</option>{% for n in (1, 2, 3, 4, 5) %}<option value="{{ n }}"{{ ' selected' if i == 0 and prefill.ai == n }}>the AI picks {{ n }} {{ 'person' if n == 1 else 'people' }}</option>{% endfor %}</select></div>
+<div class="hx-chat-pick" role="group" aria-label="Who task {{ i + 1 }} is for" data-pick-people{{ ' hidden' if i == 0 and prefill.ai in (1, 2, 3, 4, 5) }}>{% for m in people %}<label class="hx-choice"><input type="checkbox" name="t{{ i }}_to" value="{{ m.user_id }}"{{ ' checked' if i == 0 and m.user_id == prefill.to }}><i class="fa-solid {{ positions[m.position].icon }}"></i><span>{{ m.user.username }} <small>· {{ positions[m.position].label }}</small></span><i class="fa-solid fa-check hx-check"></i></label>{% endfor %}</div>
+</fieldset>{% endfor %}
+<div class="hx-row-actions"><button type="button" class="hx-btn hx-btn-ghost" data-task-more><i class="fa-solid fa-plus"></i><span>add another task</span></button>
+<button class="hx-btn hx-btn-solid" data-busy="assigning…"><span>assign</span><i class="fa-solid fa-paper-plane"></i></button></div>
+<p class="hx-hint">// up to {{ batch|length }} tasks at once · empty ones are skipped · everyone gets a notification and one email listing their tasks · not sure who? <a href="/companies/{{ c.id }}/ai/best">ask who's best for a task</a></p>
+</fieldset></form>{% else %}<p class="hx-empty"><i class="fa-solid fa-user-slash"></i><span>Nobody in {{ c.name }} is ranked below you ({{ positions[me.position].label }}) yet, so there's nobody to give tasks to.</span></p>{% endif %}
+</section>{% endif %}
+<section class="hx-section" id="list">
+<p class="hx-eyebrow">// {{ 'every task in ' ~ c.name if tasker else 'your tasks in ' ~ c.name }}</p>
+{% if tasks %}<div class="hx-task-list">{% for x in tasks %}{% set t = x.t %}{% set done = x.who|selectattr('0.done_at')|list|length %}
+<article class="hx-card hx-task{{ ' hx-task-off' if t.status == 'cancelled' }}{{ ' hx-task-late' if x.late and not (x.mine and x.mine.done_at) }}" id="task-{{ t.id }}">
+<div class="hx-task-head"><h2>{{ t.title }}</h2>
+<span class="hx-task-state">{% if t.status == 'cancelled' %}<i class="fa-solid fa-ban"></i> cancelled{% elif x.mine and x.mine.done_at %}<i class="fa-solid fa-circle-check"></i> you're done{% elif x.late %}<i class="fa-solid fa-triangle-exclamation"></i> overdue{% else %}<i class="fa-solid fa-hourglass-half"></i> open{% endif %}</span></div>
+<p class="hx-task-meta"><i class="fa-solid fa-hourglass-end"></i> due {{ at(t.deadline) }}{% if user.tz != tz %} <small>({{ x.when }})</small>{% endif %} · given by {{ t.created_by_name }} {{ t.created_at|tenure }} ago{% if tasker %} · {{ done }} of {{ x.who|length }} done{% endif %}</p>
+{% if t.description %}<p class="hx-task-desc">{{ t.description }}</p>{% endif %}
+{% if tasker %}<ul class="hx-task-who">{% for a, name in x.who %}<li class="{{ 'hx-ok' if a.done_at else '' }}"><i class="fa-solid {{ 'fa-circle-check' if a.done_at else 'fa-circle' }}"></i>{{ name }}{% if a.done_at %} <small>done {{ a.done_at|tenure }} ago</small>{% endif %}</li>{% endfor %}</ul>{% endif %}
+<div class="hx-row-actions">{% if x.mine and t.status == 'open' %}<form method="post" action="/tasks/{{ t.id }}/{{ 'reopen' if x.mine.done_at else 'done' }}">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm{{ '' if x.mine.done_at else ' hx-btn-solid' }}"><i class="fa-solid {{ 'fa-rotate-left' if x.mine.done_at else 'fa-check' }}"></i><span>{{ 'not done yet' if x.mine.done_at else 'mark done' }}</span></button></form>{% endif %}
+{% if t.status == 'open' and tasker and (t.created_by_id == me.user_id or top) %}<form method="post" action="/tasks/{{ t.id }}/cancel">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-ban"></i><span>cancel task</span></button></form>{% endif %}</div>
+</article>{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-list-check"></i><span>{{ 'No tasks given yet.' if tasker else 'No tasks for you here yet.' }}</span></p>{% endif %}
+</section>
+</div>{% endblock %}
+{% block modals %}{% if tasker %}{# a new meeting: schedule it, or start it now (the same form; "start now" sends now=true). data-reopen-on-error: done = no empty form again #}
+<div class="modal fade hx-modal" id="meet-new" tabindex="-1" aria-labelledby="meet-new-title" aria-hidden="true">
+<div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+<div class="modal-header hx-term-bar"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><h2 class="modal-title hx-term-title" id="meet-new-title">~/meetings/new · {{ c.name }}</h2>
+<button type="button" class="hx-icon-btn hx-modal-x" data-mdb-dismiss="modal" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
+<div class="modal-body">
+<form method="post" action="/companies/{{ c.id }}/meetings" class="hx-form" id="meet-new-form" data-meet-form data-reopen-on-error>{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-heading"></i><span class="visually-hidden">Title</span><input name="title" minlength="3" maxlength="120" placeholder="title, e.g. weekly standup" required></label>
+<label class="hx-field hx-area"><i class="fa-solid fa-align-left"></i><span class="visually-hidden">Agenda</span><textarea name="agenda" rows="2" maxlength="2000" placeholder="agenda (optional): shown to everyone invited, and the AI's notes follow it"></textarea></label>
+<div class="hx-meet-when-row">
+<label class="hx-field"><i class="fa-regular fa-calendar"></i><span class="hx-pfx" aria-hidden="true">starts:</span><span class="visually-hidden">Starts ({{ tz }})</span><input type="datetime-local" name="starts" min="{{ now_local }}" data-meet-starts></label>
+<select class="hx-select" name="minutes" aria-label="How long">{% for d in durations %}<option value="{{ d }}"{{ ' selected' if d == 30 }}>{{ d }} minutes</option>{% endfor %}</select>
+</div>
+<p class="hx-hint">// on {{ c.name }}'s clock ({{ tz }}{{ your_hours(c) }}) · inside working hours ({{ hours }}) on a working day that isn't a public holiday or a national holiday of anyone invited · never overlapping another meeting</p>
+<p class="hx-eyebrow">// invite</p>
+<label class="hx-choice hx-toggle"><input type="checkbox" name="everyone" value="true" data-meet-everyone><i class="fa-solid fa-users"></i><span>everyone in {{ c.name }} ({{ colleagues|length }} {{ 'person' if colleagues|length == 1 else 'people' }})</span><i class="fa-solid fa-check hx-check"></i></label>
+<div class="hx-chat-pick hx-gap-sm" role="group" aria-label="Who to invite" data-meet-pick>{% for m in colleagues %}<label class="hx-choice"><input type="checkbox" name="invite" value="{{ m.user_id }}"><i class="fa-solid {{ positions[m.position].icon }}"></i><span>{{ m.user.username }} <small>· {{ positions[m.position].label }}</small></span><i class="fa-solid fa-check hx-check"></i></label>{% endfor %}</div>
+<ul class="hx-meet-facts hx-gap-sm">
+<li><i class="fa-solid fa-bell"></i><span>everyone invited gets a notification and an email now, and a reminder 10 minutes before (the room opens then)</span></li>
+<li><i class="fa-solid fa-lock"></i><span>only they (and you) can join, while they're in {{ c.name }}; afterwards they and the owner, co-owners, managers and HR can open the record</span></li>
+<li><i class="fa-solid fa-closed-captioning"></i><span>captions by Whisper{{ '' if captions.ready else ' (off right now)' }}, translated to English, and AI notes: all on this server</span></li>
+</ul>
+</form>
+{% if closed %}<p class="hx-err-msg"><i class="fa-solid fa-moon"></i> It isn't working time at {{ c.name }} right now ({{ hours }}, or a holiday), so a meeting can't start now: you can still schedule one. Next chance to start one: <b>{{ next_open }}</b>.</p>{% endif %}
+</div>
+<div class="modal-footer"><button type="button" class="hx-btn hx-btn-ghost" data-mdb-dismiss="modal"><span>cancel</span></button>
+<button class="hx-btn" form="meet-new-form" name="now" value="true" data-meet-now data-busy="starting…"{{ ' disabled' if closed }}><i class="fa-solid fa-bolt"></i><span>start now</span></button>
+<button class="hx-btn hx-btn-solid" form="meet-new-form" data-meet-schedule data-busy="scheduling…"><span>schedule</span><i class="fa-solid fa-calendar-check"></i></button></div>
+</div></div></div>{% endif %}{% endblock %}

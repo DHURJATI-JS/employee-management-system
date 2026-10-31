@@ -1,0 +1,8 @@
+# The local AI (grow.py) on an NVIDIA card, for VLLM_GPU=nvidia in .env. Built + started by setup_services.ps1 as the "vllm" container, published on 127.0.0.1:8100 only.
+# NOT TESTED: the PC this was written on has no NVIDIA card. Same vLLM version, model and settings as Dockerfile.amd, so the app can't tell which one it's talking to.
+FROM vllm/vllm-openai:v0.19.1
+COPY patch_gguf.py /tmp/patch_gguf.py
+RUN python3 /tmp/patch_gguf.py && rm /tmp/patch_gguf.py
+ENV HF_HOME=/models/hf PYTHONUNBUFFERED=1
+ENTRYPOINT []
+EXPOSE 8000

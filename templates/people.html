@@ -1,0 +1,63 @@
+{% extends "base.html" %}{% from "_avatar.html" import avatar %}
+{# routers/people.py people(): tops (companies you own / co-own; empty = you can't search), mine (the one you're recruiting for), q,
+   wants (what's matched: your words, or the company's hiring text), rows = [{p (profile + user), match, why, blocked (reason or None),
+   approached (None / "pending" / "declined")}], floor (offers start at the company's minimum for join_as; None = salaries not set), positions, join_as #}
+{% block title %}Find people{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/people/search</span><span class="hx-term-meta"><i class="fa-solid fa-vector-square"></i> pgvector</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>grep -ri "{{ q or 'talent' }}" ./people</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// people who chose to be found, ranked by how well their profile matches what you want</p>
+{% if not tops %}<p class="hx-empty"><i class="fa-solid fa-user-shield"></i><span>Only a company's owner or co-owners can search for people. <a href="/companies/new">Create a company</a> to start recruiting.</span></p>
+{% else %}<form method="get" action="/people" class="hx-assist hx-assist-main hx-search" role="search">
+<label class="hx-field"><i class="fa-solid fa-users-viewfinder"></i><span class="visually-hidden">What you're looking for</span><span class="hx-pfx" aria-hidden="true">&gt;</span><input name="q" value="{{ q }}" placeholder="e.g. python developer, docker, 3 years" maxlength="100" autocomplete="off" spellcheck="false"></label>
+{% if tops|length > 1 %}<label class="visually-hidden" for="people-company">Recruiting for</label><select name="company" id="people-company" class="hx-select hx-select-lg">{% for t in tops %}<option value="{{ t.company_id }}"{% if t.company_id == mine.company_id %} selected{% endif %}>for {{ t.company.name }}</option>{% endfor %}</select>
+{% else %}<input type="hidden" name="company" value="{{ mine.company_id }}">{% endif %}
+<button class="hx-icon-btn" aria-label="Search people"><i class="fa-solid fa-arrow-right"></i></button>
+</form>
+<p class="hx-hint hx-gap-sm">// {% if q %}matching your words, for {{ mine.company.name }}{% elif wants %}no words given: matching what {{ mine.company.name }} is hiring for{% else %}type what you're looking for, or add who you're hiring to {{ mine.company.name }} (workplaces → edit){% endif %}</p>{% endif %}
+</div>
+</section>
+{% if tops and wants %}<section class="hx-section">
+<p class="hx-eyebrow">// {{ rows|length }} {{ 'person' if rows|length == 1 else 'people' }}, best match first</p>
+{% if rows %}<div class="row g-4">{% for r in rows %}{% set p, u = r.p, r.p.user %}
+<div class="col-md-6"><article class="hx-card hx-result hx-reveal">
+<div class="hx-result-head">{{ avatar(u.id, u.username) }}
+<div class="hx-result-name"><h2>{{ u.username }}</h2><small>{{ p.headline or 'no headline' }}{% if p.years %} · {{ p.years }} yr{{ '' if p.years == 1 else 's' }}{% endif %}</small></div>
+<span class="hx-match" title="pgvector cosine similarity"><b>{{ r.match }}%</b><small>match</small></span></div>
+<span class="hx-bar hx-match-bar" aria-hidden="true"><span data-pct="{{ r.match }}"></span></span>
+{% if p.wants() %}{% set co = mine.company %}<p class="hx-fit hx-fit-1"><i class="fa-solid fa-money-bill-wave"></i>expects {{ p.wants() }}{% if co.salary_currency and p.want_currency != co.salary_currency %} (≈ {{ '{:,}'.format(pay_in(p.want_min, p.want_currency, p.want_period, co.salary_currency, co.salary_period)) }}{% if p.want_max %}–{{ '{:,}'.format(pay_in(p.want_max, p.want_currency, p.want_period, co.salary_currency, co.salary_period)) }}{% else %}+{% endif %} {{ co.salary_currency }} per {{ co.salary_period }} at today's rate){% endif %}</p>{% endif %}
+{% if p.bio %}<p class="hx-about">{{ p.bio|truncate(260) }}</p>{% endif %}
+{% if p.skills %}<div class="hx-chips">{% for s in p.skills[:12] %}<span class="hx-pos"><i class="fa-solid fa-microchip"></i>{{ s }}</span>{% endfor %}</div>{% endif %}
+{% if r.why %}<p class="hx-why"><i class="fa-solid fa-link"></i><span>matched:</span>{% for w in r.why %}<mark>{{ w }}</mark>{% endfor %}</p>{% endif %}
+<div class="hx-result-go">
+{% if r.blocked %}<p class="hx-locked-note"><i class="fa-solid fa-lock"></i>{{ u.username }} {{ r.blocked }}, so they can't be approached. Ask them directly if they'd switch.</p>
+<div class="hx-row-actions"><button type="button" class="hx-btn hx-btn-sm" disabled aria-disabled="true" title="Not available: company rules"><i class="fa-solid fa-paper-plane"></i><span>approach</span></button>
+<a href="mailto:{{ u.email }}?subject={{ ('About joining ' ~ mine.company.name)|urlencode }}&amp;body={{ ('Hi ' ~ u.username ~ ',\n\nI\'m ' ~ user.username ~ ' from ' ~ mine.company.name ~ '. I saw your profile on ' ~ app_name ~ ' and wondered whether you\'d be open to switching to us.\n')|urlencode }}" class="hx-btn hx-btn-sm hx-btn-solid"><i class="fa-solid fa-envelope-open-text"></i><span>contact {{ u.username }}</span></a></div>
+{% elif r.approached == 'pending' %}<button type="button" class="hx-btn hx-btn-sm" disabled aria-disabled="true"><i class="fa-solid fa-check"></i><span>offer sent for {{ mine.company.name }}</span></button>
+{% elif r.approached == 'declined' %}<button type="button" class="hx-btn hx-btn-sm" disabled aria-disabled="true"><i class="fa-solid fa-xmark"></i><span>declined {{ mine.company.name }}'s offer</span></button>
+{% elif not floor %}<a href="/workplaces#edit-{{ mine.company_id }}" class="hx-btn hx-btn-sm"><i class="fa-solid fa-money-bill-wave"></i><span>set {{ mine.company.name }}'s salaries to approach</span></a>
+{% else %}<button type="button" class="hx-btn hx-btn-sm hx-btn-solid" data-mdb-modal-init data-mdb-target="#approach-{{ u.id }}"><i class="fa-solid fa-paper-plane"></i><span>approach for {{ mine.company.name }}</span></button>{% endif %}
+</div>
+</article></div>{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-ghost"></i>Nobody who's open to being found matches that yet. Try a skill or a job title.</p>{% endif %}
+</section>{% endif %}
+</div>{% endblock %}
+{% block modals %}{% for r in (rows if floor else []) if not r.blocked and not r.approached %}{% set u = r.p.user %}{# the offer dialog: message + salary, sent to their notifications + email #}
+<div class="modal fade hx-modal" id="approach-{{ u.id }}" tabindex="-1" aria-labelledby="approach-{{ u.id }}-title" aria-hidden="true">
+<div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+<div class="modal-header hx-term-bar"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><h2 class="modal-title hx-term-title" id="approach-{{ u.id }}-title">~/people/{{ u.username }}/offer</h2>
+<button type="button" class="hx-icon-btn hx-modal-x" data-mdb-dismiss="modal" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
+<div class="modal-body">
+<p class="hx-sub">// {{ u.username }} sees this offer in their notifications and by email, and can join {{ mine.company.name }} or decline{% if r.p.wants() %}. They expect {{ r.p.wants() }}{% endif %}</p>
+<form method="post" action="/companies/{{ mine.company_id }}/approach/{{ u.id }}" class="hx-form" id="approach-form-{{ u.id }}">{{ csrf_input(request) }}
+<label class="hx-field hx-area"><i class="fa-solid fa-message"></i><span class="visually-hidden">Your message to {{ u.username }}</span><textarea name="message" rows="5" minlength="10" maxlength="1000" required placeholder="why you'd like them on the team, the role, how to reach you…"></textarea></label>
+<label class="hx-field"><i class="fa-solid fa-money-bill-wave"></i><span class="visually-hidden">Salary offered, in {{ mine.company.salary_currency }} per {{ mine.company.salary_period }}</span><span class="hx-pfx" aria-hidden="true">salary:</span><input name="salary_amount" type="number" min="{{ floor }}" max="10000000000" step="1" inputmode="numeric" required value="{{ r.suggest or floor }}"><span class="hx-pfx hx-unit" aria-hidden="true">{{ mine.company.salary_currency }} / {{ mine.company.salary_period }}</span></label>
+<p class="hx-hint">// at least {{ '{:,}'.format(floor) }} {{ mine.company.salary_currency }} per {{ mine.company.salary_period }} ({{ mine.company.name }}'s minimum for {{ positions[join_as].label }}) · they see the salary · one offer per company and person · if they decline, {{ mine.company.name }} can't ask again</p>
+</form>
+</div>
+<div class="modal-footer"><button type="button" class="hx-btn hx-btn-ghost" data-mdb-dismiss="modal"><span>cancel</span></button>
+<button class="hx-btn hx-btn-solid" form="approach-form-{{ u.id }}" data-busy="sending…"><span>send offer</span><i class="fa-solid fa-paper-plane"></i></button></div>
+</div></div></div>
+{% endfor %}{% endblock %}

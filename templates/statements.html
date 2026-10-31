@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% from "_payout.html" import payout_row, deposit_row with context %}{# with context: times + amounts on the viewer's clock / currency #}
+{# routers/payroll.py statements(): payouts = every salary payment you've received (newest first), new = ids unread until now, totals = [(currency, gross, tds, net)],
+   companies = [{id, name, payouts, totals}] the companies you own / co-own, with every payment each one made #}
+{% block title %}Statements{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/statements</span><span class="hx-term-meta"><i class="fa-solid fa-receipt"></i> {{ payouts|length }} payment{{ '' if payouts|length == 1 else 's' }}</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>cat ~/statements</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// every salary payment you've received{{ ', and every payment made by the companies you own or co-own' if companies }}. Open one for its exact payslip (gross, TDS, net, account, reference) and the transfer screenshot</p>
+{% if totals %}<div class="hx-totals">{% for cur, gross, tds, net in totals %}<div><small>received ({{ cur }})</small><b>{{ money(cur, net) }}</b><span>gross {{ money(cur, gross) }} · TDS {{ money(cur, tds) }}</span></div>{% endfor %}</div>{% endif %}
+</div>
+</section>
+<section class="hx-section">
+<p class="hx-eyebrow">// money in: your salary</p>
+{% if payouts %}<div class="hx-tx-list">{% for p in payouts %}{{ payout_row(p, 'employee', p.id in new) }}{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-receipt"></i><span>No payments yet. Salaries are paid {{ cycle_every }} from the day you joined; each one shows up here, in your notifications and in your email.</span></p>{% endif %}
+</section>
+{% for co in companies %}<section class="hx-section" id="company-{{ co.id }}">
+<p class="hx-eyebrow">// money in &amp; out: {{ co.name }} (you own / co-own it) <a href="/companies/{{ co.id }}/dashboard#statement" class="hx-eyebrow-link">company dashboard →</a></p>
+{% if co.totals or co.deposited %}<div class="hx-totals hx-gap-sm">{% for cur, gross, tds, net in co.totals %}<div><small>paid out ({{ cur }})</small><b>{{ money(cur, net) }}</b><span>gross {{ money(cur, gross) }} · TDS {{ money(cur, tds) }}</span></div>{% endfor %}
+{% for cur, amount, n in co.deposited %}<div><small>deposited ({{ cur }})</small><b>{{ money(cur, amount) }}</b><span>{{ n }} deposit{{ '' if n == 1 else 's' }} · added to the net worth</span></div>{% endfor %}</div>{% endif %}
+{% if co.lines %}<div class="hx-tx-list hx-gap-sm">{% for kind, t in co.lines %}{{ payout_row(t, 'company', prefix='out') if kind == 'out' else deposit_row(t) }}{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-receipt"></i><span>{{ co.name }} hasn't recorded any salary payments or deposits yet.</span></p>{% endif %}
+</section>{% endfor %}
+</div>{% endblock %}

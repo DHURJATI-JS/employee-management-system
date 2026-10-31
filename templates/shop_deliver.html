@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{# routers/shop.py deliver_page(): the delivery person's page (no login, the seller's link): o (Order), to (the address while it's on its way, else {}), items #}
+{% block title %}Deliver {{ o.number }}{% endblock %}
+{% block content %}<section class="hx-term hx-auth">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/deliver/{{ o.number }}</span><span class="hx-term-meta"><i class="fa-solid fa-truck"></i> {{ o.company_name }}</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>deliver {{ o.number }}</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+{% if o.status in ('shipped', 'out_for_delivery') %}
+<p class="hx-sub">// {{ items|map(attribute='qty')|sum }} item{{ '' if items|map(attribute='qty')|sum == 1 else 's' }} from {{ o.company_name }}{{ ' · collect ' ~ price(o.currency, o.total_minor)|striptags ~ ' in cash' if o.payment_method == 'cod' }}</p>
+<p class="hx-card hx-addr"><b>{{ to.name }}</b><br>{{ to.line1 }}{{ ', ' ~ to.line2 if to.line2 }}<br>{{ to.city }}{{ ', ' ~ to.state if to.state }} {{ to.postcode }}<br><a href="tel:{{ to.phone }}">{{ to.phone }}</a></p>
+<form method="post" class="hx-form hx-gap-sm">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">The buyer's delivery code</span><span class="hx-pfx" aria-hidden="true">code:</span><input name="code" inputmode="numeric" pattern="\s*\d{3}\s*\d{3}\s*" maxlength="12" required placeholder="the buyer's 6 digits" autocomplete="off"></label>
+<label class="hx-field"><i class="fa-solid fa-user"></i><span class="visually-hidden">Your name</span><input name="by_name" maxlength="60" placeholder="your name (optional)"></label>
+<button class="hx-btn hx-btn-solid" data-busy="checking…"><i class="fa-solid fa-house-circle-check"></i><span>delivered</span></button></form>
+<p class="hx-hint">// ask the buyer for the 6-digit code on their order page: it proves it reached them. This link stops working once it's delivered</p>
+{% else %}<p class="hx-sub">// this order is {{ order_status[o.status] }}: nothing to deliver here</p>{% endif %}
+</div></section>{% endblock %}

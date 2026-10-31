@@ -1,0 +1,19 @@
+{# one meeting in a list (company tasks page, /tasks). Import it "with context": its times are on the viewer's clock (payroll.at_span).
+   m = Meeting, shut = why the room is closed (None = open), company = its name (lists across companies), people = [(uid, username, joined)], invited, parts = recordings #}
+{% macro meeting_row(m, shut, company=None, people=None, invited=True, parts=()) %}
+{% set state = 'live' if m.status == 'live' else 'off' if m.status == 'cancelled' or (m.status == 'ended' and not m.started_at) else m.status %}
+<article class="hx-card hx-meet-row hx-meet-is-{{ state }}" id="meeting-{{ m.id }}">
+<div class="hx-meet-date" aria-hidden="true"><b>{{ at(m.starts_at, '%d') }}</b><small>{{ at(m.starts_at, '%b') }}</small></div>
+<div class="hx-meet-info">
+<h3>{% if m.status == 'live' %}<span class="hx-meet-live">live</span> {% endif %}{{ m.title }}</h3>
+<p class="hx-task-meta"><i class="fa-regular fa-clock"></i> {{ at_span(m.starts_at, m.ends_at) }}{% if company %} · <i class="fa-solid fa-building"></i> {{ company }}{% endif %} · by {{ m.created_by_name }}{% if people %} · {{ people|length }} invited{% endif %}
+{% if m.status == 'cancelled' %} · <b>cancelled</b>{% elif m.status == 'ended' %} · {{ 'ended' if m.started_at else "didn't happen (nobody joined)" }}{% if parts %} · <i class="fa-solid fa-film"></i> {{ parts|length }} recording{{ '' if parts|length == 1 else 's' }}{% endif %}{% endif %}</p>
+{% if m.agenda %}<p class="hx-task-desc">{{ m.agenda|truncate(220) }}</p>{% endif %}
+</div>
+<div class="hx-meet-go">
+{% if invited and not shut %}<a class="hx-btn hx-btn-sm hx-btn-solid" href="/meetings/{{ m.id }}/room"><i class="fa-solid fa-video"></i><span>join</span></a>
+{% elif invited and m.status == 'scheduled' %}<span class="hx-hint" title="{{ shut }}"><i class="fa-solid fa-door-closed"></i> opens 10 min before</span>{% endif %}
+<a class="hx-btn hx-btn-sm hx-btn-ghost" href="/meetings/{{ m.id }}"><span>{{ 'record' if m.status == 'ended' and m.started_at else 'details' }}</span><i class="fa-solid fa-arrow-right"></i></a>
+</div>
+</article>
+{% endmacro %}

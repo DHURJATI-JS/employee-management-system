@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{# routers/auth.py forgot_*: step = "ask" (kind preselected) | "code" (kind, channel, left = seconds the code still works, tries, dev_delivery) | "done" (username);
+   ttl = minutes a code works (10). Forgot the username or the password: a 6-digit code to the account's own email or phone #}
+{% block title %}{{ 'Your username' if step == 'done' else 'Forgot username' if kind == 'username' else 'Reset password' }}{% endblock %}
+{% block content %}<section class="hx-term hx-auth">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/auth/recover.sh</span><span class="hx-term-meta"><i class="fa-solid fa-hourglass-half"></i> codes last {{ ttl }} min</span></div>
+<div class="hx-term-body">
+{% if step == 'ask' %}<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>./recover</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// forgot your username or your password? A 6-digit code goes to the email or phone on your account. It works for {{ ttl }} minutes</p>
+<form method="post" action="/forgot" class="hx-form">{{ csrf_input(request) }}
+<div class="hx-choices" role="radiogroup" aria-label="What did you forget?">
+<label class="hx-choice"><input type="radio" name="kind" value="username"{{ ' checked' if kind == 'username' }}><i class="fa-solid fa-user"></i><span>my username</span><i class="fa-solid fa-check hx-check"></i></label>
+<label class="hx-choice"><input type="radio" name="kind" value="password"{{ ' checked' if kind == 'password' }}><i class="fa-solid fa-key"></i><span>my password</span><i class="fa-solid fa-check hx-check"></i></label></div>
+<label class="hx-field"><i class="fa-solid fa-at"></i><span class="visually-hidden">Your email, phone number or username</span><input name="who" placeholder="email, phone (+ country code) or username" autocomplete="username" spellcheck="false" minlength="3" maxlength="255" required autofocus></label>
+<div class="hx-choices" role="radiogroup" aria-label="Send the code by">
+<label class="hx-choice"><input type="radio" name="channel" value="email" checked><i class="fa-solid fa-envelope"></i><span>email me the code</span><i class="fa-solid fa-check hx-check"></i></label>
+<label class="hx-choice"><input type="radio" name="channel" value="phone"><i class="fa-solid fa-mobile-screen-button"></i><span>text me the code</span><i class="fa-solid fa-check hx-check"></i></label></div>
+<button class="hx-btn" data-busy="sending…"><span>send the code</span><i class="fa-solid fa-paper-plane"></i></button></form>
+<p class="hx-hint">// the code only goes to the email or phone already on the account, and we never say whether an account exists (that keeps them private)</p>
+<p class="hx-alt">remembered it? <a href="/login">./login</a></p>
+{% elif step == 'code' %}<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>./recover --code</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<div class="hx-boot" aria-hidden="true">
+<p><span class="hx-ok">[  ok  ]</span> code sent to the account's {{ 'email' if channel == 'email' else 'phone (SMS)' }}, if it exists</p>
+<p><span class="hx-wait">[ wait ]</span> {{ tries }} {{ 'try' if tries == 1 else 'tries' }} left<span class="hx-cursor">_</span></p>
+</div>
+<p class="hx-code-clock"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> this code works for <b data-expires-in="{{ left }}">{{ left // 60 }}:{{ '%02d' % (left % 60) }}</b> more{% if not left %}: <span>it expired, send a new one</span>{% endif %}</p>
+<form method="post" action="/forgot/verify" class="hx-form">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-hashtag"></i><span class="visually-hidden">The 6-digit code</span><span class="hx-pfx" aria-hidden="true">code:</span><input name="code" placeholder="6 digits" inputmode="numeric" autocomplete="one-time-code" pattern="\s*\d(\s*\d){5}\s*" maxlength="12" required autofocus></label>
+{% if kind == 'password' %}<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">New password</span><span class="hx-pfx" aria-hidden="true">new:</span><input name="password" type="password" placeholder="new password: 8+ characters, not a common one" autocomplete="new-password" minlength="8" maxlength="128" required><button type="button" class="hx-eye" aria-label="Show password" aria-pressed="false"><i class="fa-solid fa-eye"></i><i class="fa-solid fa-eye-slash"></i></button></label>
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">New password again</span><span class="hx-pfx" aria-hidden="true">again:</span><input name="password_confirm" type="password" placeholder="the same again" autocomplete="new-password" minlength="8" maxlength="128" required></label>
+<p class="hx-hint hx-caps" data-caps hidden><i class="fa-solid fa-triangle-exclamation"></i> caps lock is on</p>{% endif %}
+<button class="hx-btn" data-busy="checking…"><span>{{ 'show my username' if kind == 'username' else 'set the new password' }}</span><i class="fa-solid {{ 'fa-user-check' if kind == 'username' else 'fa-lock' }}"></i></button></form>
+<div class="hx-resend"><form method="post" action="/forgot/resend">{{ csrf_input(request) }}<button class="hx-link"><i class="fa-solid fa-rotate-right"></i> send a new code</button></form></div>
+{% if kind == 'password' %}<p class="hx-hint">// a new password logs you out everywhere, and you get an email + a text saying it changed</p>{% endif %}
+{% if dev_delivery %}<p class="hx-hint hx-dev"><i class="fa-solid fa-terminal"></i> dev mode: codes are printed in the server console. Set SMTP_* / SMS_PROVIDER in .env to really send them.</p>{% endif %}
+<p class="hx-alt">wrong account? <a href="/forgot?kind={{ kind }}">./start again</a> · <a href="/login">./login</a></p>
+{% else %}<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>./recover --done</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// code accepted: this is your username (it's shown once)</p>
+<div class="hx-recovered"><i class="fa-solid fa-user" aria-hidden="true"></i><code>{{ username }}</code>
+<button type="button" class="hx-btn hx-btn-sm" data-copy="{{ username }}" aria-label="Copy the username" title="copy"><i class="fa-solid fa-copy"></i><span>copy</span></button></div>
+<a href="/login" class="hx-btn hx-btn-solid"><span>log in</span><i class="fa-solid fa-arrow-right"></i></a>
+<p class="hx-alt">forgot the password too? <a href="/forgot?kind=password">./reset it</a></p>{% endif %}
+</div>
+</section>{% endblock %}

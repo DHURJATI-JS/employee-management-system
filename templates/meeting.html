@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{# routers/meetings.py meeting_page(): m (Meeting), c (Company), me (your membership), invited, people [(uid, username, first joined)], known (live names),
+   lines [(MeetingLine, meet.line_view)], notes ({summary, points, decisions, actions} or None), parts (recording numbers), shut (why the room is closed, None = open),
+   in_room (people in the call now), recording (being recorded now), can_manage (whoever scheduled it / owner / co-owner: cancel, delete), span (company clock), tz #}
+{% set gone = m.status == 'ended' and not m.started_at %}
+{% set status = 'live now' if m.status == 'live' else "didn't happen" if gone else m.status %}
+{% block title %}{{ m.title }} · meeting{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/companies/{{ c.name }}/meetings/{{ m.id }}</span><span class="hx-term-meta"><i class="fa-solid fa-video"></i> {{ status }}</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>meet "{{ m.title }}"</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// {% if m.status == 'live' %}<span class="hx-meet-live">live</span> {% endif %}{{ at_span(m.starts_at, m.ends_at) }}{% if user.tz != tz %} <small>({{ span }})</small>{% endif %} · {{ c.name }} · scheduled by {{ m.created_by_name }} · <a href="/companies/{{ c.id }}/tasks#meetings">all meetings</a></p>
+{% if m.agenda %}<p class="hx-meet-agenda"><i class="fa-solid fa-list-ul"></i> {{ m.agenda }}</p>{% endif %}
+<div class="hx-row-actions hx-gap-sm">
+{% if invited and not shut %}<a href="/meetings/{{ m.id }}/room" class="hx-btn hx-btn-solid"><i class="fa-solid fa-video"></i><span>join the call{{ ' · ' ~ in_room ~ ' in it now' if in_room }}</span></a>
+{% elif invited and m.status == 'scheduled' %}<span class="hx-hint"><i class="fa-solid fa-door-closed"></i> {{ shut }}</span>{% endif %}
+{% if not invited %}<span class="hx-hint"><i class="fa-solid fa-eye"></i> you're not invited: you can open its record as {{ c.name }}'s {{ positions[me.position].label }}, not join it</span>{% endif %}
+{% if lines or notes %}<a href="/meetings/{{ m.id }}/transcript" class="hx-btn hx-btn-sm"><i class="fa-solid fa-file-arrow-down"></i><span>download notes + transcript</span></a>{% endif %}
+{% if can_manage and m.status == 'scheduled' and not in_room %}<form method="post" action="/meetings/{{ m.id }}/cancel">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-ban"></i><span>cancel meeting</span></button></form>{% endif %}
+</div>
+</div>
+</section>
+<section class="hx-section" id="people">
+<p class="hx-eyebrow">// invited · {{ people|length }}{{ ' · ' ~ people|selectattr('2')|list|length ~ ' joined' if m.started_at }}</p>
+<ul class="hx-task-who">{% for u, name, joined in people %}{% set k = known.get(u) %}<li class="{{ 'hx-ok' if joined else '' }}"><i class="fa-solid {{ 'fa-circle-check' if joined else 'fa-circle' }}"></i><b data-chat-user="{{ u }}">{{ k.username if k else name }}</b>{% if k and k.real %} <small class="hx-chat-real" data-chat-real="{{ u }}" title="name on their identity proof">{{ k.real }}{{ ' ✓' if k.verified }}</small>{% endif %}{% if joined %} <small>joined {{ at(joined, '%H:%M') }}</small>{% endif %}</li>{% endfor %}</ul>
+<p class="hx-hint hx-gap-sm"><i class="fa-solid fa-shield-halved"></i> only the people invited can join, and only while they're in {{ c.name }}. This record (recordings, captions, chat, AI notes) can be opened by them and by {{ c.name }}'s owner, co-owners, managers and HR. Captions and chat are encrypted at rest; what someone said stays {{ retention }} days after their account is deleted, then it's erased.</p>
+</section>
+{% if parts or recording %}<section class="hx-section" id="recording">
+<p class="hx-eyebrow">// recordings · {{ parts|length }}</p>
+{% if recording %}<p class="hx-hint"><span class="hx-meet-live">rec</span> being recorded right now: the newest one grows until it stops</p>{% endif %}
+<div class="hx-meet-recs">{% for p in parts %}<figure class="hx-card hx-meet-rec-card"><video controls preload="metadata" src="/meetings/{{ m.id }}/recording/{{ p }}"></video>
+<figcaption><i class="fa-solid fa-film"></i> recording {{ p }} · <a href="/meetings/{{ m.id }}/recording/{{ p }}?download=true">download (.webm)</a></figcaption></figure>{% endfor %}</div>
+</section>{% endif %}
+<section class="hx-section" id="notes">
+<p class="hx-eyebrow">// AI notes{% if m.notes_at %} · updated {{ at(m.notes_at) }}{% endif %} · written by the local AI from the captions and chat: check them</p>
+{% if notes %}<article class="hx-card hx-meet-notes">
+{% if notes.summary %}<p class="hx-meet-sum">{{ notes.summary }}</p>{% endif %}
+{% if notes.points %}<h3><i class="fa-solid fa-list-ul"></i> key points</h3><ul>{% for p in notes.points %}<li>{{ p }}</li>{% endfor %}</ul>{% endif %}
+{% if notes.decisions %}<h3><i class="fa-solid fa-gavel"></i> decisions</h3><ul>{% for d in notes.decisions %}<li>{{ d }}</li>{% endfor %}</ul>{% endif %}
+{% if notes.actions %}<h3><i class="fa-solid fa-list-check"></i> action items</h3><ul class="hx-meet-actions">{% for a in notes.actions %}<li><b>{{ a.who }}</b> {{ a.what }}</li>{% endfor %}</ul>{% endif %}
+</article>{% else %}<p class="hx-empty"><i class="fa-solid fa-wand-magic-sparkles"></i><span>{{ "No notes: the meeting didn't happen." if gone else 'No notes yet: the local AI writes them during the call, from what is said and written, and once more at the end.' if m.status != 'cancelled' else 'Cancelled: no notes.' }}{% if not ai_status().ready and m.status in ('scheduled', 'live') %} The local AI is offline right now ({{ ai_status().detail }}).{% endif %}</span></p>{% endif %}
+</section>
+<section class="hx-section" id="transcript">
+<p class="hx-eyebrow">// captions &amp; chat · {{ lines|length }} · on your clock</p>
+{% if lines %}<ol class="hx-meet-log">{% for l, v in lines %}<li class="{{ 'hx-meet-log-chat' if l.kind == 'chat' else 'hx-meet-log-speech' }}">
+<time>{{ at(l.at, '%H:%M') }}</time>
+<div><span class="hx-chat-who"><i class="fa-solid {{ 'fa-message' if l.kind == 'chat' else 'fa-closed-captioning' }}" title="{{ 'written in the chat' if l.kind == 'chat' else 'said (caption)' }}"></i> <b{% if v.user %} data-chat-user="{{ v.user }}"{% endif %}>{{ v.name }}</b>{% if v.real %} <small class="hx-chat-real" data-chat-real="{{ v.user }}">{{ v.real }}{{ ' ✓' if v.verified }}</small>{% endif %}{% if v.gone %} <small>(deleted account)</small>{% endif %}</span>
+<p>{{ v.en or v.text }}</p>{% if l.kind == 'speech' and l.lang != 'en' %}<p class="hx-meet-orig"><small>{{ v.language }}:</small> {{ v.text }}{% if not v.en %} <small>(no English: the local AI was busy or offline)</small>{% endif %}</p>{% endif %}</div></li>{% endfor %}</ol>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-closed-captioning"></i><span>{{ 'Nothing was said or written.' if m.status == 'ended' else 'What is said (captions) and written in the chat during the call shows here.' }}</span></p>{% endif %}
+</section>
+{% if can_manage and m.status in ('ended', 'cancelled') %}<section class="hx-section"><details class="hx-meet-danger"><summary class="hx-eyebrow">// delete this meeting's record <i class="fa-solid fa-chevron-down"></i></summary>
+<p class="hx-hint">// removes its recordings, captions, chat and notes for everyone, for good</p>
+<form method="post" action="/meetings/{{ m.id }}/delete">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-danger"><i class="fa-solid fa-trash"></i><span>delete “{{ m.title }}” for good</span></button></form></details></section>{% endif %}
+</div>{% endblock %}

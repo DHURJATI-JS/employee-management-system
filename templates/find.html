@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{# routers/find.py: prompt (what was typed), result = finder.find() {best, close, ranked_by, you, looked_at} or None, crit = finder.read() criteria, how = which
+   engine read it, understood = [(icon, text)], missing = [{icon, title, detail, link}], examples. Rows go through _company_card.html with row.checks #}
+{% block title %}AI company finder{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/find</span><span class="hx-term-meta"><i class="fa-solid {{ 'fa-circle-check' if ai_status().ready else 'fa-plug-circle-xmark' }}"></i> local AI {{ 'connected' if ai_status().ready else 'offline: rules only' }}</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>find --companies "{{ (prompt or 'what you want')|truncate(40) }}"</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// say what you want in your own words: the kind of work, pay (any currency), the currency it pays in, other jobs, freelancing, place, hours. Nothing you type is stored</p>
+<form method="post" action="/find" class="hx-form hx-find-form" data-find data-no-reopen>{{ csrf_input(request) }}
+<label class="hx-field hx-area"><i class="fa-solid fa-wand-magic-sparkles"></i><span class="visually-hidden">What kind of company are you looking for?</span><textarea name="prompt" rows="3" minlength="3" maxlength="500" placeholder="e.g. {{ examples[0] }}" data-find-prompt required>{{ prompt }}</textarea></label>
+<div class="hx-find-examples">{% for e in examples %}<button type="button" class="hx-btn hx-btn-sm hx-btn-ghost" data-find-example="{{ e }}"><i class="fa-solid fa-lightbulb"></i><span>{{ e|truncate(60) }}</span></button>{% endfor %}</div>
+<button class="hx-btn hx-btn-solid" data-busy="thinking…"><span>find companies</span><i class="fa-solid fa-arrow-right"></i></button>
+<p class="hx-hint">// Enter to search, Shift+Enter for a new line{{ '' if ai_status().ready else ' · the local AI is offline: amounts, currencies, hours and the rest are still read by rules' }}</p>
+</form>
+</div>
+</section>
+{% if result %}<section class="hx-section">
+<p class="hx-eyebrow">// understood · {{ how }}</p>
+{% if understood %}<div class="hx-chips">{% for icon, text in understood %}<span class="hx-pos"><i class="fa-solid {{ icon }}"></i>{{ text }}</span>{% endfor %}</div>
+{% else %}<p class="hx-hint">// nothing specific: showing companies nearest to {{ result.ranked_by }}</p>{% endif %}
+{% for n in crit.notes %}<p class="hx-hint"><i class="fa-solid fa-circle-info"></i> {{ n }}</p>{% endfor %}
+</section>
+{% if missing %}<section class="hx-section">
+<p class="hx-eyebrow">// points you might be missing</p>
+<ul class="hx-warn-list hx-find-missing">{% for m in missing %}<li><i class="fa-solid {{ m.icon }}" aria-hidden="true"></i><span><b>{{ m.title }}</b> {{ m.detail }}
+{% if m.link == 'save-salary' %}{% set s = crit.salary %}<form method="post" action="/profile/salary" class="d-inline">{{ csrf_input(request) }}<input type="hidden" name="want_min" value="{{ s[0] }}"><input type="hidden" name="want_max" value="{{ s[1] or '' }}"><input type="hidden" name="want_currency" value="{{ s[2] }}"><input type="hidden" name="want_period" value="{{ s[3] }}"><button class="hx-btn hx-btn-sm"><i class="fa-solid fa-floppy-disk"></i><span>save {{ '{:,}'.format(s[0]) }}{{ ('–' ~ '{:,}'.format(s[1])) if s[1] else '+' }} {{ s[2] }} per {{ s[3] }}</span></button></form>
+{% elif m.link %} <a href="{{ m.link }}">go →</a>{% endif %}</span></li>{% endfor %}</ul>
+</section>{% endif %}
+<section class="hx-section">
+<p class="hx-eyebrow">// {{ result.best|length }} compan{{ 'y meets' if result.best|length == 1 else 'ies meet' }} everything you asked · ranked by {{ result.ranked_by }} · {{ result.looked_at }} looked at</p>
+{% if result.best %}<div class="row g-4">{% for row in result.best %}<div class="col-md-6">{% include "_company_card.html" %}</div>{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-ghost"></i><span>No company meets every point{{ ': the closest ones are below, with what each misses' if result.close else '' }}.</span></p>{% endif %}
+</section>
+{% if result.close %}<section class="hx-section">
+<p class="hx-eyebrow">// close: missing one or more points (✗ shows which)</p>
+<div class="row g-4">{% for row in result.close %}<div class="col-md-6">{% include "_company_card.html" %}</div>{% endfor %}</div>
+</section>{% endif %}{% endif %}
+</div>{% endblock %}

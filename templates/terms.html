@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{# routers/terms.py: the site's own terms (user asked): how to use it, a student-grade project, no liability, not free to use: ask the owner (contact_email, whatsapp = (shown, wa.me digits): CONTACT_EMAIL + OWNER_NUMBER in .env) #}
+{% block title %}Terms & conditions{% endblock %}
+{% block content %}<div class="hx-wide hx-site-terms">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/terms.md</span><span class="hx-term-meta"><i class="fa-solid fa-scale-balanced"></i> updated {{ updated }}</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>cat TERMS.md</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// the terms for using {{ app_name }}. By signing up, logging in or using any part of it, you accept them</p>
+<div class="hx-terms-key">
+<p class="hx-err-msg"><i class="fa-solid fa-graduation-cap"></i> <span><b>A student-grade project.</b> {{ app_name }} was built as a student project. It is not a certified, audited or commercially supported product.</span></p>
+<p class="hx-err-msg"><i class="fa-solid fa-ban"></i> <span><b>Not for free use.</b> This software is not meant for free use. Before you use it, for yourself, a team or a company, contact the owner directly and ask for permission.</span></p>
+<p class="hx-err-msg"><i class="fa-solid fa-shield-halved"></i> <span><b>No liability.</b> The owner is not liable for any damages caused by using {{ app_name }}, from now on.</span></p>
+</div>
+<div class="hx-actions"><a href="mailto:{{ contact_email }}?subject={{ (app_name ~ ' usage request')|urlencode }}" class="hx-btn hx-btn-solid"><i class="fa-solid fa-envelope"></i><span>{{ contact_email }}</span></a>
+{% if whatsapp[1] %}<a href="https://wa.me/{{ whatsapp[1] }}" class="hx-btn" target="_blank" rel="noopener noreferrer"><i class="fa-brands fa-whatsapp"></i><span>WhatsApp {{ whatsapp[0] }}</span></a>{% endif %}</div>
+</div>
+</section>
+<section class="hx-section">
+<div class="row g-4">
+<div class="col-lg-6"><article class="hx-card hx-reveal"><span class="hx-icon"><i class="fa-solid fa-handshake"></i></span><h2>1. Permission to use</h2>
+<ul class="hx-points"><li>{{ app_name }} is not free software and not a free service. Using it, copying it, hosting it or building on it needs the owner's permission first.</li>
+<li>To ask, write to <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>{% if whatsapp[1] %} or message <a href="https://wa.me/{{ whatsapp[1] }}" target="_blank" rel="noopener noreferrer">{{ whatsapp[0] }} on WhatsApp</a>{% endif %}, and say who you are and what you want to use it for.</li>
+<li>Permission can be refused or withdrawn at any time, and an account can be closed or banned without notice.</li></ul></article></div>
+<div class="col-lg-6"><article class="hx-card hx-reveal"><span class="hx-icon"><i class="fa-solid fa-graduation-cap"></i></span><h2>2. A student-grade project</h2>
+<ul class="hx-points"><li>{{ app_name }} is a student project. It has been tested by its author, but it hasn't been audited, certified or tested for real-world use at scale.</li>
+<li>It can have bugs, security gaps, downtime and data loss. Features can change or disappear at any time.</li>
+<li>Don't rely on it for anything where a mistake would hurt you: keep your own records of salaries, payments, contracts and documents.</li></ul></article></div>
+<div class="col-lg-6"><article class="hx-card hx-reveal"><span class="hx-icon"><i class="fa-solid fa-shield-halved"></i></span><h2>3. No liability</h2>
+<ul class="hx-points"><li>{{ app_name }} is provided "as is" and "as available", without any warranty of any kind.</li>
+<li>To the fullest extent the law allows, the owner is not liable for any damages caused by using it, or by not being able to use it, from now on: direct or indirect, including lost money, salaries, payments, data, business, earnings or opportunities.</li>
+<li>That includes mistakes in its calculations, exchange rates, payroll rules, AI answers, translations, notifications and emails, and anything other people do through it.</li></ul></article></div>
+<div class="col-lg-6"><article class="hx-card hx-reveal"><span class="hx-icon"><i class="fa-solid fa-money-bill-transfer"></i></span><h2>4. Money</h2>
+<ul class="hx-points"><li>{{ app_name }} never moves salary money. A company sends salaries from its own bank, then records each payment here; the numbers it checks (minimums, clearance, net worth, exchange rates) are only a help.</li>
+<li>Payroll rules and tax notes are AI-written summaries: they can be wrong or out of date and are not legal or tax advice.</li>
+<li>Shop payments run in test mode unless the owner has set real payments up; nothing is charged in test mode.</li></ul></article></div>
+<div class="col-lg-6"><article class="hx-card hx-reveal"><span class="hx-icon"><i class="fa-solid fa-robot"></i></span><h2>5. AI features</h2>
+<ul class="hx-points"><li>The Deminic AI, the company finder, reviews, suggestions, promotions, task allotment, captions, notes and translations come from AI models running on this server. They can be wrong: a company that turns on automatic promotions is responsible for them.</li>
+<li>Web search results come from DuckDuckGo or Wikipedia and are marked as such; check anything important yourself.</li>
+<li>Nothing the AI says is professional, legal, financial or medical advice.</li></ul></article></div>
+<div class="col-lg-6"><article class="hx-card hx-reveal"><span class="hx-icon"><i class="fa-solid fa-user-lock"></i></span><h2>6. Your data</h2>
+<ul class="hx-points"><li>You give your username, email, phone number, date of birth, bank details and an identity proof. Bank and ID numbers are encrypted; uploads are virus-scanned.</li>
+<li>A company's owner, co-owners, managers and HR can see its members' email, phone, attendance and company chats. Personal chats are only for the people in them.</li>
+<li>Every request is written to a daily activity log with its IP address; during a limiter overload every incoming IP is logged too. Admin actions are logged.</li></ul></article></div>
+<div class="col-lg-6"><article class="hx-card hx-reveal"><span class="hx-icon"><i class="fa-solid fa-hand"></i></span><h2>7. Fair use</h2>
+<ul class="hx-points"><li>No spam, flooding, scraping, impersonation, fake companies, fake payments, or attempts to break in or around any limit.</li>
+<li>Spam and limit breaking are paused automatically and reported to the admin, who can ban accounts and IP addresses, and delete companies, with a reason.</li>
+<li>You must be 18 or older, and use your own real identity.</li></ul></article></div>
+<div class="col-lg-6"><article class="hx-card hx-reveal"><span class="hx-icon"><i class="fa-solid fa-file-signature"></i></span><h2>8. Company terms &amp; changes</h2>
+<ul class="hx-points"><li>Each company also has its own terms, shown and accepted before joining it. These site terms apply on top of them.</li>
+<li>These terms can change at any time; the date at the top says when they last did. Using {{ app_name }} after a change means you accept the new terms.</li></ul></article></div>
+</div>
+</section>
+<section class="hx-section">
+<p class="hx-eyebrow">// how to use {{ app_name }}</p>
+<ol class="hx-pipeline hx-pipeline-4">
+<li class="hx-reveal"><span class="hx-icon"><i class="fa-solid fa-envelope-open-text"></i></span><h3>ask first</h3><p>get the owner's permission by email or WhatsApp</p></li>
+<li class="hx-reveal"><span class="hx-icon"><i class="fa-solid fa-user-plus"></i></span><h3>sign up</h3><p>username, email + phone (both verified by code), date of birth (18+)</p></li>
+<li class="hx-reveal"><span class="hx-icon"><i class="fa-solid fa-id-card"></i></span><h3>get ready</h3><p>in settings: bank details and an identity proof; then a profile and CV</p></li>
+<li class="hx-reveal"><span class="hx-icon"><i class="fa-solid fa-building"></i></span><h3>create or join</h3><p>a company (joining needs its approval and its terms accepted)</p></li>
+</ol>
+<ul class="hx-points hx-gap">
+<li><b>Work:</b> tasks and a calendar, chats (with files), video meetings with captions; attendance counts only inside working hours.</li>
+<li><b>Pay:</b> owners, co-owners, managers and HR send the salary from the company's bank, then record it on the company dashboard (any currency) with the bank's reference and a screenshot; the employee gets the payslip.</li>
+<li><b>Ask the AI:</b> open the chat button on any page and pick Deminic AI; switch the globe on to let it search the web.</li>
+<li><b>Forgot something:</b> the login page's "forgot username or password" sends a 10-minute code to your email or phone.</li>
+<li><b>Language:</b> pick yours from the header; new words show in English for a few minutes while they're translated.</li>
+</ul>
+</section>
+</div>{% endblock %}

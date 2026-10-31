@@ -1,0 +1,40 @@
+{# one line of a transaction statement (statements.html: side="employee"; company_dashboard.html: side="company"). It opens (a <details>) to
+   the exact payslip, the transfer screenshot (the receipt, loaded only when opened) and a printable payslip. /statements#pay-<id> and
+   …/dashboard#pay-<id> open it straight away (app.js) #}
+{% macro payout_row(p, side, new=False, prefix='pay') %}{# prefix: the same payment can be on one page twice (an owner's own salary); times on the viewer's clock #}
+<details class="hx-tx{{ ' hx-tx-new' if new }}" id="{{ prefix }}-{{ p.id }}">
+<summary><span class="hx-tx-icon" aria-hidden="true"><i class="fa-solid {{ 'fa-arrow-down-long' if side == 'employee' else 'fa-arrow-up-long' }}"></i></span>
+<span class="hx-tx-main"><b>{{ p.company_name if side == 'employee' else p.employee_name }}</b><small>{{ at(p.transferred_at) }} · cycle {{ p.cycle }} · ref {{ p.reference }}</small>
+{% if p.company_code %}<small class="hx-tx-code">company ID {{ p.company_code }}</small>{% endif %}</span>
+{% if new %}<span class="hx-new">new</span>{% endif %}
+<span class="hx-tx-amt"><b>{{ ('+ ' if side == 'employee' else '− ') ~ money(p.currency, p.net) }}</b><small>net · {{ tax_label(p.salary_currency or p.currency) }} {{ money(p.currency, p.tds) }}</small></span><i class="fa-solid fa-chevron-down hx-tx-chev" aria-hidden="true"></i></summary>
+<div class="hx-tx-body">
+<div class="row g-3">
+<div class="col-md-7"><dl class="hx-slip">{% for k, v in slip(p) %}<dt>{{ k }}</dt><dd{% if k == 'Net paid' %} class="hx-slip-net"{% endif %}>{{ v }}</dd>{% endfor %}
+{% set yours = currency_of(user.region) if user else None %}{% if yours and yours != p.currency %}<dt>In your currency</dt><dd>{{ money(p.currency, p.net) }} <small>net</small></dd>{% endif %}</dl>
+<div class="hx-row-actions hx-gap-sm"><a href="/payouts/{{ p.id }}/slip" class="hx-btn hx-btn-sm"><i class="fa-solid fa-print"></i><span>payslip</span></a>
+<a href="/payouts/{{ p.id }}/proof" class="hx-btn hx-btn-sm hx-btn-ghost" target="_blank" rel="noopener"><i class="fa-solid fa-up-right-from-square"></i><span>full-size receipt</span></a></div></div>
+<div class="col-md-5"><figure class="hx-proof"><a href="/payouts/{{ p.id }}/proof" target="_blank" rel="noopener"><img src="/payouts/{{ p.id }}/proof" alt="Transfer screenshot for payment {{ '%06d'|format(p.id) }}" loading="lazy" decoding="async"></a>
+<figcaption>// receipt: the transfer screenshot uploaded by {{ p.paid_by_name }}</figcaption></figure></div>
+</div>
+</div>
+</details>
+{% endmacro %}
+{# money paid into a company (a Deposit): on its statement as money in, with the receipt lines and the bank screenshot. …#dep-<id> opens it #}
+{% macro deposit_row(d, prefix='dep') %}
+<details class="hx-tx hx-tx-in" id="{{ prefix }}-{{ d.id }}">
+<summary><span class="hx-tx-icon" aria-hidden="true"><i class="fa-solid fa-arrow-down-long"></i></span>
+<span class="hx-tx-main"><b>deposit · {{ d.source }}</b><small>{{ at(d.transferred_at) }} · ref {{ d.reference }} · by {{ d.by_name }}</small>
+<small class="hx-tx-code">company ID {{ d.company_code }}</small></span>
+<span class="hx-tx-amt"><b>+ {{ money(d.currency, d.amount) }}</b><small>net worth after: {{ money(d.worth_currency or d.currency, d.net_worth_after) }}</small></span><i class="fa-solid fa-chevron-down hx-tx-chev" aria-hidden="true"></i></summary>
+<div class="hx-tx-body">
+<div class="row g-3">
+<div class="col-md-7"><dl class="hx-slip">{% for k, v in deposit_slip(d) %}<dt>{{ k }}</dt><dd{% if k == 'Amount' %} class="hx-slip-net"{% endif %}>{{ v }}</dd>{% endfor %}
+{% set yours = currency_of(user.region) if user else None %}{% if yours and yours != d.currency %}<dt>In your currency</dt><dd>{{ money(d.currency, d.amount) }}</dd>{% endif %}</dl>
+<div class="hx-row-actions hx-gap-sm"><a href="/deposits/{{ d.id }}/proof" class="hx-btn hx-btn-sm hx-btn-ghost" target="_blank" rel="noopener"><i class="fa-solid fa-up-right-from-square"></i><span>full-size receipt</span></a></div></div>
+<div class="col-md-5"><figure class="hx-proof"><a href="/deposits/{{ d.id }}/proof" target="_blank" rel="noopener"><img src="/deposits/{{ d.id }}/proof" alt="Bank screenshot for deposit D{{ '%06d'|format(d.id) }}" loading="lazy" decoding="async"></a>
+<figcaption>// receipt: the bank screenshot uploaded by {{ d.by_name }}</figcaption></figure></div>
+</div>
+</div>
+</details>
+{% endmacro %}

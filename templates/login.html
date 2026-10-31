@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% from "_avatar.html" import avatar %}
+{# routers/auth.py login_page(): accounts (this browser's saved accounts, each checked against the database just now: gone or banned ones never
+   show; usernames only, never passwords), banned ({username, reason, on}: the account someone just tried is banned by the admin) #}
+{% block title %}Log in{% endblock %}
+{% block content %}<section class="hx-term hx-auth">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/auth/login.sh</span><span class="hx-term-meta"><i class="fa-solid fa-shield-halved"></i> csrf on</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>./login</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+{% if banned %}<div class="hx-banned" role="alert"><i class="fa-solid fa-ban" aria-hidden="true"></i>
+<div><b>{{ banned.username }} has been banned</b><p>The {{ app_name }} admin banned this account on {{ banned.on }}{% if banned.reason %}. Reason: {{ banned.reason }}{% endif %}. You can't log in with it.</p>
+<p>If you think this is a mistake, contact the admin: <a href="mailto:{{ contact_email }}?subject={{ ('Banned account ' ~ banned.username)|urlencode }}">{{ contact_email }}</a></p></div></div>{% endif %}
+{% if accounts %}<div class="hx-accounts" data-accounts>
+<p class="hx-eyebrow">// choose an account</p>
+<ul>{% for a in accounts %}<li class="hx-account-row"><button type="button" class="hx-account" data-account="{{ a.username }}">{{ avatar(a.id, a.username, 'hx-avatar-sm') }}<span><b>{{ a.username }}</b><small>{{ a.email }}</small></span><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+<form method="post" action="/login/accounts/remove">{{ csrf_input(request) }}<input type="hidden" name="user_id" value="{{ a.id }}"><button class="hx-icon-btn hx-account-x" aria-label="Remove {{ a.username }} from this browser's list" title="remove from this list"><i class="fa-solid fa-xmark"></i></button></form></li>{% endfor %}
+<li class="hx-account-row"><button type="button" class="hx-account hx-account-other" data-account=""><span class="hx-account-plus" aria-hidden="true"><i class="fa-solid fa-user-plus"></i></span><span><b>use another account</b></span></button></li></ul>
+<p class="hx-hint">// saved on this browser: who logged in here, never a password. × takes one off the list</p></div>{% else %}
+<div class="hx-boot" aria-hidden="true">
+<p><span class="hx-ok">[  ok  ]</span> csrf token issued</p>
+<p><span class="hx-ok">[  ok  ]</span> password check: scrypt</p>
+<p><span class="hx-ok">[  ok  ]</span> session store: redis</p>
+<p><span class="hx-wait">[ wait ]</span> awaiting credentials<span class="hx-cursor">_</span></p>
+</div>{% endif %}
+<form method="post" action="/login" class="hx-form">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-user"></i><span class="visually-hidden">Username</span><span class="hx-pfx" aria-hidden="true">login:</span><input name="username" placeholder="username" autocomplete="username" spellcheck="false" required{{ ' autofocus' if not accounts }} data-login-user></label>
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Password</span><span class="hx-pfx" aria-hidden="true">passwd:</span><input name="password" type="password" placeholder="••••••••" autocomplete="current-password" required data-login-pass><button type="button" class="hx-eye" aria-label="Show password" aria-pressed="false"><i class="fa-solid fa-eye"></i><i class="fa-solid fa-eye-slash"></i></button></label>
+<p class="hx-hint hx-caps" data-caps hidden><i class="fa-solid fa-triangle-exclamation"></i> caps lock is on</p>
+<button class="hx-btn" data-busy="authenticating…"><span>authenticate</span><i class="fa-solid fa-fingerprint"></i></button>
+</form>
+<p class="hx-alt">forgot your <a href="/forgot?kind=username">username</a> or <a href="/forgot?kind=password">password</a>? · no account? <a href="/register">./signup</a></p>
+<p class="hx-alt hx-admin-link"><a href="/admin/login"><i class="fa-solid fa-user-shield"></i> admin</a></p>
+</div>
+</section>{% endblock %}

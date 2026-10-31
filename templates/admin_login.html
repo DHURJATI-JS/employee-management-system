@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{# routers/admin.py admin_login_page(): left (wrong tries left from this IP before it's banned), tries (5), ip (this visitor's address). Only while logged out #}
+{% block title %}Admin sign-in{% endblock %}
+{% block content %}<section class="hx-term hx-auth">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/admin/login.sh</span><span class="hx-term-meta"><i class="fa-solid fa-user-shield"></i> admin only</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">#</span> <span data-type>./admin</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// the {{ app_name }} admin console: its user id and password are the ones in the server's .env file</p>
+<div class="hx-admin-warn" role="alert"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+<p><b>Warning: {{ tries }} wrong tries and this IP address is banned.</b> Get the user id or password wrong {{ tries }} times and <b>{{ ip }}</b> is blocked from the whole of {{ app_name }}, not only this page.
+<span class="hx-admin-left">{{ left }} {{ 'try' if left == 1 else 'tries' }} left</span></p></div>
+<form method="post" action="/admin/login" class="hx-form">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-user-shield"></i><span class="visually-hidden">Admin user id</span><span class="hx-pfx" aria-hidden="true">admin:</span><input name="username" placeholder="user id" autocomplete="username" spellcheck="false" required autofocus></label>
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Password</span><span class="hx-pfx" aria-hidden="true">passwd:</span><input name="password" type="password" placeholder="••••••••" autocomplete="current-password" required><button type="button" class="hx-eye" aria-label="Show password" aria-pressed="false"><i class="fa-solid fa-eye"></i><i class="fa-solid fa-eye-slash"></i></button></label>
+<p class="hx-hint hx-caps" data-caps hidden><i class="fa-solid fa-triangle-exclamation"></i> caps lock is on</p>
+<button class="hx-btn" data-busy="checking…"><span>sign in as admin</span><i class="fa-solid fa-user-shield"></i></button>
+</form>
+<p class="hx-alt">not the admin? <a href="/login">./login</a></p>
+</div>
+</section>{% endblock %}

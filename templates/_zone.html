@@ -1,0 +1,9 @@
+{# the region + time zone picker (signup, settings): grouped by currency, one option per region time zone ("US:America/New_York"). The region sets the
+   currency money is also shown in and the national holidays; the time zone, the clock every time is shown on. data-zone-guess: app.js picks the
+   browser's own time zone on the signup page if it's listed #}
+{% macro zone_select(id, selected, guess=False) %}{% set names = {"INR": "Indian rupee", "USD": "US dollar", "EUR": "Euro", "GBP": "British pound", "AUD": "Australian dollar",
+  "CAD": "Canadian dollar", "SGD": "Singapore dollar", "AED": "UAE dirham"} %}
+<label class="visually-hidden" for="{{ id }}">Your region and time zone</label>
+<select name="zone" id="{{ id }}" class="hx-select hx-select-lg hx-select-wide" required{{ ' data-zone-guess' if guess }}>{% for cur, cname in names.items() %}<optgroup label="{{ cname }} ({{ cur }})">
+{% for code, (rname, rcur) in regions_list.items() if rcur == cur %}{% for tz, label in region_zones[code] %}<option value="{{ code }}:{{ tz }}" data-tz="{{ tz }}"{% if code ~ ':' ~ tz == selected %} selected{% endif %}>{{ rname }}{{ ' · ' ~ label if region_zones[code]|length > 1 }} ({{ tz }})</option>{% endfor %}{% endfor %}
+</optgroup>{% endfor %}</select>{% endmacro %}

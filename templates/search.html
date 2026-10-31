@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{# routers/discover.py search(): q, rows = [{company, match, why}] (pgvector-ranked when q is given, newest first otherwise), joined, positions, join_as. Public page #}
+{% block title %}{{ rows[0].company.name if single and rows else 'Search: ' ~ q if q else 'Find companies' }}{% endblock %}
+{% block content %}<div class="{{ 'hx-solo-page' if single else 'hx-wide' }}">
+{% if single %}{# single company mode (the admin's switch): no search, the one company fills the screen #}
+{% if rows %}{% set row, solo = rows[0], True %}{% include "_company_card.html" %}
+{% else %}<p class="hx-empty"><i class="fa-solid fa-building"></i><span>There's no company here yet, or it isn't listed: ask its owner for the join code.</span></p>{% endif %}
+<p class="hx-hint hx-gap-sm">// single company mode: {{ app_name }} runs for one company, so there's nothing to search</p>
+{% else %}
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/companies/search</span><span class="hx-term-meta"><i class="fa-solid fa-vector-square"></i> pgvector</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>grep -ri "{{ q or 'hiring' }}" ./companies</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// search what companies do and who they want to hire. Anyone can join a listed company as {{ positions[join_as].label }}</p>
+<form method="get" action="/companies/search" class="hx-assist hx-assist-main hx-search" role="search">
+<label class="hx-field"><i class="fa-solid fa-magnifying-glass"></i><span class="visually-hidden">Search companies</span><span class="hx-pfx" aria-hidden="true">&gt;</span><input name="q" value="{{ q }}" placeholder="e.g. python backend developer, payroll accountant, UI designer" maxlength="100" autocomplete="off" spellcheck="false"></label>
+<button class="hx-icon-btn" aria-label="Search"><i class="fa-solid fa-arrow-right"></i></button>
+</form>
+{% if user %}<p class="hx-hint hx-gap-sm">// or let the AI pick: <a href="/recommendations">companies matched to your profile</a></p>
+{% else %}<p class="hx-hint hx-gap-sm">// <a href="/register">sign up</a> or <a href="/login">log in</a> to join one, or to get companies matched to your CV</p>{% endif %}
+</div>
+</section>
+<section class="hx-section">
+<p class="hx-eyebrow">// {% if q %}{{ rows|length }} match{{ '' if rows|length == 1 else 'es' }} for "{{ q }}", best first{% else %}newest listed companies{% endif %}</p>
+{% if rows %}<div class="row g-4">{% for row in rows %}<div class="col-md-6">{% include "_company_card.html" %}</div>{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-ghost"></i>{% if q %}No listed company matches that yet. Try other words, like a skill or a job title.{% else %}No company is listed yet. Owners can list theirs from workplaces → edit.{% endif %}</p>{% endif %}
+</section>
+{% endif %}
+</div>{% endblock %}

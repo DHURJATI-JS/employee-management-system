@@ -1,0 +1,13 @@
+{# the Geoapify location picker (app.js [data-place-picker]): search an address or click the map, see it pinned. Only Geoapify's place id goes
+   into the hidden input `target`; the server re-checks it with Geoapify (places.py) before saving. picker(target, box_id, company=None, confirm=True):
+   confirm = a dialog with a "use this location" button; False = inline (the edit dialog), fills the form as soon as a place is picked.
+   Leaflet (the map) is served from /static and only loads when the picker opens #}
+{% macro picker(target, box_id, company=None, confirm=True) %}
+<div class="hx-place" id="{{ box_id }}" data-place-picker data-target="{{ target }}" data-key="{{ geoapify_key }}" data-lib="{{ static('leaflet-1.9.4/') }}"{% if company and company.location_lat is not none %} data-lat="{{ company.location_lat }}" data-lng="{{ company.location_lng }}"{% endif %}{% if confirm %} data-confirm{% endif %}>
+{% if geoapify_key %}<label class="hx-field"><i class="fa-solid fa-magnifying-glass-location"></i><span class="visually-hidden">Search the company's address</span><input type="search" data-place-q placeholder="search the address or the building's name" autocomplete="off" spellcheck="false" maxlength="200" aria-controls="{{ box_id }}-results"></label>
+<ul class="hx-place-results" id="{{ box_id }}-results" data-place-results aria-label="Places found" hidden></ul>
+<div class="hx-place-map" data-place-map role="application" aria-label="Map: click a spot to pick the address there"></div>
+<p class="hx-place-status" data-place-status role="status"><i class="fa-solid fa-circle-info"></i> type at least 3 letters and pick a result, or click the spot on the map</p>
+{% else %}<div class="hx-ai-off" role="alert"><i class="fa-solid fa-map-location-dot"></i><div><b>Geoapify isn't set up</b><span>Company locations are picked on a map and verified with Geoapify. Add GEOAPIFY_API_KEY to .env (a free key from myprojects.geoapify.com) and restart the app.</span></div></div>{% endif %}
+</div>
+{% endmacro %}

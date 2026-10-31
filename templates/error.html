@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{# Rendered by system.error_page() with {"errmessage": ..., "status": ..., "title": ..., "back_url": ...} #}
+{% block title %}{{ status }} {{ title }}{% endblock %}
+{% block content %}<section class="hx-term hx-auth hx-error">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/errors/{{ status }}.log</span><span class="hx-term-meta hx-err-meta"><i class="fa-solid fa-triangle-exclamation"></i> exit {{ status }}</span></div>
+<div class="hx-term-body">
+<p class="hx-err-code" data-glitch="{{ status }}" aria-hidden="true">{{ status }}</p>
+<h1 class="hx-title"><span class="hx-prompt hx-err">!</span> <span data-type>{{ title }}</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<div class="hx-boot" aria-hidden="true">
+<p><span class="hx-err">[ fail ]</span> {{ request.method }} {{ path }}</p>
+<p><span class="hx-err">[ fail ]</span> {{ status }} {{ title }}</p>
+<p><span class="hx-wait">[ hint ]</span> go back, or head home</p>
+</div>
+<p class="hx-err-msg">&gt; {{ errmessage }}</p>
+<div class="hx-actions">
+<a href="{{ back_url }}" class="hx-btn hx-btn-solid hx-back"><i class="fa-solid fa-arrow-left"></i><span>go back</span></a>
+{% if status == 401 and not user %}<a href="/login" class="hx-btn"><i class="fa-solid fa-right-to-bracket"></i><span>log in</span></a>{% endif %}
+{% if back_url != "/" %}<a href="/" class="hx-btn"><i class="fa-solid fa-house"></i><span>home</span></a>{% endif %}
+</div>
+</div>
+</section>{% endblock %}

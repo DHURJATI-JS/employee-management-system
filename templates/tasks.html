@@ -1,0 +1,51 @@
+{% extends "base.html" %}{% from "_meeting.html" import meeting_row with context %}
+{# routers/tasks.py my_tasks(): rows = [{t (Task), a (your TaskAssignee), c (Company), when (deadline on its clock), late}] open tasks, not-done first;
+   giving = [(company id, name, your position)] where you can give tasks (and schedule meetings); region (your holidays); meetings = meet.my_meetings() [{m, company, shut}].
+   The calendar below is filled by app.js month by month from /tasks/calendar?month=YYYY-MM inside its own scrolling box: later months as you scroll down in it, earlier ones by the
+   button at its top, forever (so it never moves the page: user asked): each task is a bar from the day it was given to its deadline, each meeting a one-day bar with its time #}
+{% block title %}My tasks{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/tasks</span><span class="hx-term-meta"><i class="fa-solid fa-list-check"></i> {{ rows|rejectattr('a.done_at')|list|length }} to do</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>tasks --mine</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// the tasks you've been given, in every company: the ones to do first, by deadline</p>
+{% if giving %}<div class="hx-row-actions hx-gap-sm">{% for cid, name, pos in giving %}<a href="/companies/{{ cid }}/tasks#give" class="hx-btn hx-btn-sm"><i class="fa-solid fa-paper-plane"></i><span>give tasks at {{ name }}</span></a>{% endfor %}</div>{% endif %}
+</div>
+</section>
+<section class="hx-section hx-meet-mine" id="meetings">
+<div class="hx-meet-head"><p class="hx-eyebrow">// meetings · live now and the next 14 days</p>
+{% if giving %}<div class="hx-row-actions">{% for cid, name, pos in giving %}<a href="/companies/{{ cid }}/tasks#meet-new" class="hx-btn hx-btn-sm"><i class="fa-solid fa-video"></i><span>new meeting at {{ name }}</span></a>{% endfor %}</div>{% endif %}</div>
+{% if meetings %}<div class="hx-meet-list">{% for x in meetings %}{{ meeting_row(x.m, x.shut, company=x.company) }}{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-video-slash"></i><span>No meetings for you in the next 14 days. When someone invites you, it shows here, on the calendar and in your notifications.</span></p>{% endif %}
+</section>
+{% set todo = rows|rejectattr('a.done_at')|list|length %}<details class="hx-section hx-todo"{{ ' open' if 0 < todo <= 3 }}>{# many: closed, so the calendar stays in view #}<summary class="hx-eyebrow">// to do · {{ rows|rejectattr('a.done_at')|list|length }} open{{ ', ' ~ rows|selectattr('late')|list|length ~ ' overdue' if rows|selectattr('late')|list }} <i class="fa-solid fa-chevron-down"></i></summary>
+{% if rows %}<div class="hx-task-list">{% for x in rows %}{% set t = x.t %}
+<article class="hx-card hx-task{{ ' hx-task-late' if x.late }}" id="task-{{ t.id }}">
+<div class="hx-task-head"><h2>{{ t.title }}</h2><span class="hx-task-state">{% if x.a.done_at %}<i class="fa-solid fa-circle-check"></i> done{% elif x.late %}<i class="fa-solid fa-triangle-exclamation"></i> overdue{% else %}<i class="fa-solid fa-hourglass-half"></i> open{% endif %}</span></div>
+<p class="hx-task-meta"><i class="fa-solid fa-building"></i> <a href="/companies/{{ x.c.id }}/tasks#task-{{ t.id }}">{{ x.c.name }}</a> · due {{ at(t.deadline) }} · from {{ t.created_by_name }}</p>
+{% if t.description %}<p class="hx-task-desc">{{ t.description }}</p>{% endif %}
+<form method="post" action="/tasks/{{ t.id }}/{{ 'reopen' if x.a.done_at else 'done' }}">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm{{ '' if x.a.done_at else ' hx-btn-solid' }}"><i class="fa-solid {{ 'fa-rotate-left' if x.a.done_at else 'fa-check' }}"></i><span>{{ 'not done yet' if x.a.done_at else 'mark done' }}</span></button></form>
+</article>{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-mug-hot"></i><span>No tasks for you right now.</span></p>{% endif %}
+</details>
+<section class="hx-section hx-cal" data-cal>
+<div class="hx-cal-head">
+<p class="hx-eyebrow">// calendar · each task runs from the day it was given to its deadline · holidays: {% if region %}{{ region_name(region) }}{% else %}<a href="/settings#region">pick your region</a>{% endif %}</p>
+<div class="hx-cal-tools">
+<label class="hx-choice hx-toggle"><input type="checkbox" data-cal-filter="mine" checked><i class="fa-solid fa-inbox"></i><span>given to me</span><i class="fa-solid fa-check hx-check"></i></label>
+{% if giving %}<label class="hx-choice hx-toggle"><input type="checkbox" data-cal-filter="gave" checked><i class="fa-solid fa-paper-plane"></i><span>I gave</span><i class="fa-solid fa-check hx-check"></i></label>{% endif %}
+<label class="hx-choice hx-toggle"><input type="checkbox" data-cal-filter="meet" checked><i class="fa-solid fa-video"></i><span>meetings</span><i class="fa-solid fa-check hx-check"></i></label>
+{% if tracked %}<label class="hx-choice hx-toggle"><input type="checkbox" data-cal-filter="att" checked><i class="fa-solid fa-user-clock"></i><span>attendance</span><i class="fa-solid fa-check hx-check"></i></label>{% endif %}
+<button type="button" class="hx-btn hx-btn-sm" data-cal-today><i class="fa-solid fa-calendar-day"></i><span>today</span></button></div>
+<p class="hx-cal-legend"><span class="hx-cal-key hx-cal-key-open">open</span><span class="hx-cal-key hx-cal-key-done">done</span><span class="hx-cal-key hx-cal-key-late">overdue</span><span class="hx-cal-key hx-cal-key-gave">you gave it</span><span class="hx-cal-key hx-cal-key-meet">meeting</span><span class="hx-cal-key hx-cal-key-hol">national holiday</span></p>
+{% if tracked %}<p class="hx-cal-legend" aria-label="Attendance marks">attendance (your working days, on each company's clock): <span class="hx-cal-att hx-cal-att-full">✓ full day</span><span class="hx-cal-att hx-cal-att-part">◐ part of the day</span><span class="hx-cal-att hx-cal-att-absent">✗ absent</span><span class="hx-cal-att hx-cal-att-leave">☾ on leave</span><span class="hx-cal-att hx-cal-att-today">● today so far</span></p>{% endif %}
+</div>
+<div class="hx-cal-scroll" data-cal-scroll tabindex="0" role="region" aria-label="Calendar">
+<button type="button" class="hx-btn hx-btn-sm hx-btn-ghost" data-cal-earlier><i class="fa-solid fa-chevron-up"></i><span>earlier month</span></button>
+<div class="hx-cal-months" data-cal-months aria-live="polite"></div>
+<p class="hx-cal-sentinel hx-hint" data-cal-end><i class="fa-solid fa-spinner fa-spin"></i> loading the next month…</p>
+</div>
+<noscript><p class="hx-hint">// the calendar needs JavaScript; the to-do list above has every task</p></noscript>
+</section>
+</div>{% endblock %}

@@ -1,0 +1,31 @@
+<!doctype html>
+{# Standalone (no navbar/footer): shown to IPs listed in blocked_ips.txt. Rendered by system.setup_system's /blocked route. #}
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
+<title>Access blocked · {{ app_name }}</title>
+<link rel="icon" href="{{ static('img/favicon.svg') }}" type="image/svg+xml">
+<script src="{{ asset('js/theme.js') }}"></script>
+<link rel="stylesheet" href="{{ static('mdb/css/mdb.min.css') }}">
+<link rel="stylesheet" href="{{ static('fontawesome/css/all.min.css') }}">
+<link rel="stylesheet" href="{{ asset('css/app.css') }}">
+</head>
+<body class="hx-blocked">
+<main class="hx-main">
+<section class="hx-term hx-auth hx-error">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/security/blocked.log</span><span class="hx-term-meta hx-err-meta"><i class="fa-solid fa-ban"></i> denied</span></div>
+<div class="hx-term-body">
+<p class="hx-err-code" data-glitch="403" aria-hidden="true">403</p>
+<h1 class="hx-title"><span class="hx-prompt hx-err">!</span> <span data-type>access blocked</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<div class="hx-boot" aria-hidden="true">
+<p><span class="hx-err">[ deny ]</span> {{ ip }}</p>
+<p><span class="hx-err">[ deny ]</span> address is on the blocklist</p>
+</div>
+<p class="hx-err-msg">&gt; Requests from your IP address ({{ ip }}) to {{ app_name }} are blocked by the admin (for example after 5 wrong admin sign-ins). If you think this is a mistake, contact the admin and include your IP address.</p>
+{% if contact_email %}<div class="hx-actions"><a href="mailto:{{ contact_email }}?subject={{ ('Blocked IP ' ~ ip)|urlencode }}" class="hx-btn hx-btn-solid"><i class="fa-solid fa-envelope"></i><span>{{ contact_email }}</span></a></div>{% endif %}
+</div>
+</section>
+</main>
+<script src="{{ asset('js/app.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+{# routers/meetings.py room_page(): the call (meet.js does everything; meet.py on the server). m, c, people (invited), host (may record + end it for everyone),
+   span, captions (Whisper status), english (local AI status). A page of its own: no sidebar or footer, and the only one allowed the camera, mic and
+   screen capture (system.CALL_PAGE). Ids here carry no hx- prefix: aria-* attributes point at them and only class / id names are randomized #}
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ m.title }} · call · {{ app_name }}</title>
+<link rel="icon" href="{{ static('img/favicon-32.png') }}" type="image/png" sizes="32x32">
+<link rel="icon" href="{{ static('img/favicon.svg') }}" type="image/svg+xml">
+<script src="{{ asset('js/theme.js') }}"></script>
+<link rel="stylesheet" href="{{ static('mdb/css/mdb.min.css') }}">
+<link rel="stylesheet" href="{{ static('fontawesome/css/all.min.css') }}">
+<link rel="stylesheet" href="{{ asset('css/app.css') }}">
+</head>
+<body class="hx-meet-body">
+<div class="hx-meet" data-meet="{{ m.id }}" data-ws="/ws/meet/{{ m.id }}" data-tz="{{ user.tz or 'UTC' }}" data-back="/meetings/{{ m.id }}" data-host="{{ 'yes' if host else '' }}">
+<header class="hx-meet-top">
+<a class="hx-meet-brand" href="/meetings/{{ m.id }}" title="leave the call: back to the meeting's page"><i class="fa-solid fa-terminal"></i><span>{{ app_name }}</span></a>
+<div class="hx-meet-what"><h1>{{ m.title }}</h1><p>{{ c.name }} · {{ at_span(m.starts_at, m.ends_at) }}</p></div>
+<div class="hx-meet-chips">
+<span class="hx-meet-chip hx-meet-chip-rec" data-rec-chip hidden title="this call is being recorded"><i class="fa-solid fa-circle"></i><span data-rec-by>REC</span></span>
+<span class="hx-meet-chip" title="time left in the meeting's slot"><i class="fa-regular fa-clock"></i><span data-left>--</span></span>
+<span class="hx-meet-chip" data-cc-chip title="captions: {{ captions.detail }}"><i class="fa-solid fa-closed-captioning {{ 'hx-on-hours' if captions.ready else 'hx-off-hours' }}"></i><span>{{ 'captions' if captions.ready else 'no captions' }}</span></span>
+<span class="hx-meet-chip" title="people in the call"><i class="fa-solid fa-user-group"></i><span data-count>1</span></span>
+</div>
+</header>
+<section class="hx-meet-lobby" data-lobby aria-labelledby="lobby-title">
+<div class="hx-meet-preview hx-meet-self">
+<video data-preview muted playsinline autoplay></video>
+<div class="hx-meet-avatar" data-preview-off hidden>{{ initials(user.username) }}</div>
+<div class="hx-meet-pre-tools">
+<button type="button" class="hx-meet-btn" data-act="mic" aria-pressed="true" title="microphone (M)"><i class="fa-solid fa-microphone"></i><span>mic</span></button>
+<button type="button" class="hx-meet-btn" data-act="cam" aria-pressed="true" title="camera (V)"><i class="fa-solid fa-video"></i><span>camera</span></button>
+</div>
+<div class="hx-meet-level" aria-hidden="true"><span data-level></span></div>
+</div>
+<div class="hx-meet-lobby-side">
+<p class="hx-eyebrow">// ready to join?</p>
+<h2 id="lobby-title">{{ m.title }}</h2>
+{% if m.agenda %}<p class="hx-meet-agenda"><i class="fa-solid fa-list-ul"></i> {{ m.agenda|truncate(300) }}</p>{% endif %}
+<p class="hx-hint" data-devices><i class="fa-solid fa-spinner fa-spin"></i> checking your camera and microphone…</p>
+<button type="button" class="hx-btn hx-btn-solid hx-meet-join" data-join disabled><span>join now</span><i class="fa-solid fa-arrow-right"></i></button>
+<p class="hx-err-msg" data-refused hidden></p>
+<ul class="hx-meet-facts">
+<li><i class="fa-solid fa-lock"></i><span>only the {{ people|length }} people invited can join, while they're in {{ c.name }}</span></li>
+<li><i class="fa-solid fa-closed-captioning"></i><span>{% if captions.ready %}what you say is captioned by Whisper on this server{{ ' and translated to English by the local AI' if english.ready }}{% else %}captions are off right now ({{ captions.detail }}){% endif %}; captions and chat are kept with the meeting</span></li>
+<li><i class="fa-solid fa-circle-dot"></i><span>a host can record the call: everyone sees <b>● REC</b> while it records</span></li>
+<li><i class="fa-solid fa-eye"></i><span>afterwards the people invited and {{ c.name }}'s owner, co-owners, managers and HR can open the recording, captions, chat and AI notes</span></li>
+<li><i class="fa-regular fa-keyboard"></i><span>keys in the call: <kbd>M</kbd> mic · <kbd>V</kbd> camera · <kbd>S</kbd> share screen · <kbd>H</kbd> hand · <kbd>C</kbd> captions · <kbd>T</kbd> chat</span></li>
+</ul>
+<a href="/meetings/{{ m.id }}" class="hx-meet-back"><i class="fa-solid fa-arrow-left"></i> back to the meeting's page</a>
+</div>
+</section>
+<main class="hx-meet-stage" data-stage hidden>
+<div class="hx-meet-grid" data-grid></div>
+<div class="hx-meet-strip" data-strip></div>
+<div class="hx-meet-captions" data-captions aria-live="polite"></div>
+</main>
+<aside class="hx-meet-panel" data-panel hidden aria-label="Chat, captions, notes and people">
+<div class="hx-meet-tabs" role="tablist">
+<button type="button" role="tab" data-tab="chat" aria-selected="true"><i class="fa-solid fa-message"></i><span>chat</span></button>
+<button type="button" role="tab" data-tab="captions" aria-selected="false"><i class="fa-solid fa-closed-captioning"></i><span>captions</span></button>
+<button type="button" role="tab" data-tab="notes" aria-selected="false"><i class="fa-solid fa-wand-magic-sparkles"></i><span>notes</span></button>
+<button type="button" role="tab" data-tab="people" aria-selected="false"><i class="fa-solid fa-user-group"></i><span>people</span></button>
+<button type="button" class="hx-icon-btn hx-meet-x" data-panel-close aria-label="Close the panel"><i class="fa-solid fa-xmark"></i></button>
+</div>
+<section class="hx-meet-pane" data-pane="chat" role="tabpanel">
+<ol class="hx-meet-feed" data-feed="chat"><li class="hx-hint" data-empty>// nothing written yet: say hi</li></ol>
+<form class="hx-meet-say" data-say><label class="hx-field"><i class="fa-solid fa-terminal"></i><span class="visually-hidden">Message everyone in the call</span><input data-say-input maxlength="2000" placeholder="message everyone…" autocomplete="off"></label>
+<button class="hx-icon-btn" aria-label="Send"><i class="fa-solid fa-paper-plane"></i></button></form>
+<p class="hx-hint">// kept with the meeting: the people invited and the owner, co-owners, managers and HR can read it afterwards</p>
+</section>
+<section class="hx-meet-pane" data-pane="captions" role="tabpanel" hidden>
+<ol class="hx-meet-feed" data-feed="captions"><li class="hx-hint" data-empty>// what people say shows here as they say it</li></ol>
+<p class="hx-hint" data-cc-note></p>
+</section>
+<section class="hx-meet-pane" data-pane="notes" role="tabpanel" hidden><div class="hx-meet-notes" data-notes></div><p class="hx-hint" data-notes-note></p></section>
+<section class="hx-meet-pane" data-pane="people" role="tabpanel" hidden><ul class="hx-meet-people" data-people></ul>
+<p class="hx-hint">// {{ people|length }} invited · hosts (owner, co-owners, managers, HR, whoever scheduled it) can record and end the call for everyone</p></section>
+</aside>
+<nav class="hx-meet-bar" data-bar hidden aria-label="Call controls">
+<div class="hx-meet-bar-group">
+<button type="button" class="hx-meet-btn" data-act="mic" aria-pressed="true" title="microphone (M)"><i class="fa-solid fa-microphone"></i><span>mic</span></button>
+<button type="button" class="hx-meet-btn" data-act="cam" aria-pressed="true" title="camera (V)"><i class="fa-solid fa-video"></i><span>camera</span></button>
+<button type="button" class="hx-meet-btn" data-act="share" aria-pressed="false" title="share your screen (S)"><i class="fa-solid fa-display"></i><span>share</span></button>
+<button type="button" class="hx-meet-btn" data-act="hand" aria-pressed="false" title="raise your hand (H)"><i class="fa-solid fa-hand"></i><span>hand</span></button>
+<button type="button" class="hx-meet-btn" data-act="cc" aria-pressed="true" title="show captions (C)"><i class="fa-solid fa-closed-captioning"></i><span>captions</span></button>
+{% if host %}<button type="button" class="hx-meet-btn hx-meet-btn-rec" data-act="rec" aria-pressed="false" title="record the call (everyone sees it)"><i class="fa-solid fa-circle-dot"></i><span>record</span></button>{% endif %}
+</div>
+<div class="hx-meet-bar-group">
+<button type="button" class="hx-meet-btn" data-act="chat" aria-pressed="false" title="chat (T)"><i class="fa-solid fa-message"></i><span>chat</span><b class="hx-meet-badge" data-unread hidden></b></button>
+<button type="button" class="hx-meet-btn" data-act="notes" aria-pressed="false" title="the AI's live notes"><i class="fa-solid fa-wand-magic-sparkles"></i><span>notes</span></button>
+<button type="button" class="hx-meet-btn" data-act="people" aria-pressed="false" title="who's here"><i class="fa-solid fa-user-group"></i><span>people</span></button>
+</div>
+<div class="hx-meet-bar-group">
+<button type="button" class="hx-meet-btn hx-meet-btn-leave" data-act="leave" title="leave the call"><i class="fa-solid fa-phone-slash"></i><span>leave</span></button>
+{% if host %}<button type="button" class="hx-meet-btn hx-meet-btn-end" data-act="end" title="end the meeting for everyone"><i class="fa-solid fa-power-off"></i><span>end for all</span></button>{% endif %}
+</div>
+</nav>
+<div class="hx-meet-over" data-over hidden role="dialog" aria-modal="true" aria-labelledby="over-title">
+<div class="hx-card"><h2 id="over-title" data-over-title></h2><p data-over-text></p>
+<div class="hx-row-actions"><a class="hx-btn hx-btn-solid" href="/meetings/{{ m.id }}"><span>open the meeting's page</span><i class="fa-solid fa-arrow-right"></i></a>
+<a class="hx-btn hx-btn-ghost" href="/meetings/{{ m.id }}/room" data-rejoin hidden><span>join again</span></a></div></div>
+</div>
+</div>
+<script src="{{ asset('js/meet.js') }}"></script>
+</body>
+</html>

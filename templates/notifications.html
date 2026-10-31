@@ -1,0 +1,39 @@
+{% extends "base.html" %}{% from "_avatar.html" import avatar, logo %}
+{# routers/people.py notifications(): offers = your open approaches (company + by loaded), newest first; new = company ids unseen until now; salary(a) -> text #}
+{% block title %}Notifications{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/notifications</span><span class="hx-term-meta"><i class="fa-solid fa-bell"></i> {{ new|length }} new</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>tail -f ~/notifications</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// salary payments credited to you, and job offers from companies that found you in people search</p>
+</div>
+</section>
+{% if notices %}<section class="hx-section">
+<p class="hx-eyebrow">// payroll guard: warnings, alerts and payday reminders</p>
+<div class="hx-paid-list">{% for n in notices %}
+<a href="{{ n.link or '#' }}" class="hx-card hx-paid hx-notice hx-notice-{{ n.level }} hx-reveal{{ ' hx-offer-new' if n.id in fresh }}"><span class="hx-icon"><i class="fa-solid {{ {'danger': 'fa-triangle-exclamation', 'warn': 'fa-calendar-check', 'info': 'fa-circle-check'}[n.level] }}"></i></span>
+<span class="hx-paid-main"><b>{{ n.title }}</b><small>{{ n.body }}</small><small class="hx-notice-at"><i class="fa-solid fa-robot"></i> payroll guard · {{ at(n.created_at) }}</small></span>
+{% if n.id in fresh %}<span class="hx-new">new</span>{% endif %}</a>{% endfor %}</div>
+</section>{% endif %}
+{% if payouts %}<section class="hx-section">
+<p class="hx-eyebrow">// salary credited <a href="/statements" class="hx-eyebrow-link">open statements →</a></p>
+<div class="hx-paid-list">{% for p in payouts %}
+<a href="/statements#pay-{{ p.id }}" class="hx-card hx-paid hx-reveal{{ ' hx-offer-new' if p.id in paid }}"><span class="hx-icon"><i class="fa-solid fa-money-bill-transfer"></i></span>
+<span class="hx-paid-main"><b>{{ p.company_name }} credited {{ money(p.currency, p.net) }}</b><small>salary for cycle {{ p.cycle }} ({{ p.period_start.strftime('%d %b') }} – {{ p.period_end.strftime('%d %b %Y') }}) · gross {{ money(p.currency, p.gross) }}, TDS {{ money(p.currency, p.tds) }} · to ••••{{ p.account_last4 }} · {{ p.created_at|tenure }} ago</small></span>
+{% if p.id in paid %}<span class="hx-new">new</span>{% endif %}<span class="hx-paid-go">payment details &amp; receipt <i class="fa-solid fa-arrow-right"></i></span></a>{% endfor %}</div>
+</section>{% endif %}
+<section class="hx-section hx-wp-section">
+{% if payouts or notices %}<p class="hx-eyebrow">// job offers</p>{% endif %}
+{% if offers %}<div class="row g-4">{% for a in offers %}{% set c = a.company %}
+<div class="col-lg-6"><article class="hx-card hx-offer hx-reveal{{ ' hx-offer-new' if a.company_id in new }}">
+<div class="hx-result-head">{{ logo(c) }}<div class="hx-result-name"><h2>{{ c.name }}</h2><small>{% if a.by %}from {{ a.by.username }} · {% endif %}{{ a.created_at|tenure }} ago</small></div>{% if a.company_id in new %}<span class="hx-new">new</span>{% endif %}</div>
+<div class="hx-offer-salary"><i class="fa-solid fa-money-bill-wave"></i><span><small>salary offered</small><b>{{ salary(a) }}</b></span></div>
+{% if a.message %}<p class="hx-about hx-offer-msg">{{ a.message }}</p>{% endif %}
+{% if c.description %}<p class="hx-hint">// {{ c.description|truncate(160) }}</p>{% endif %}
+<div class="hx-row-actions hx-gap-sm"><a href="/companies/join/{{ a.company_id }}" class="hx-btn hx-btn-sm hx-btn-solid"><span>view &amp; join</span><i class="fa-solid fa-arrow-right"></i></a>
+<form method="post" action="/approaches/{{ a.company_id }}/dismiss">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-xmark"></i><span>decline</span></button></form></div>
+</article></div>{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-bell-slash"></i><span>No job offers. Tick "let company owners find me" on your <a href="/profile">profile</a> so companies can find and approach you.</span></p>{% endif %}
+</section>
+</div>{% endblock %}

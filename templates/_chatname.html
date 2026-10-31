@@ -1,0 +1,4 @@
+{# someone in a chat: their current username + the name on their identity proof (✓ = verified online). data-chat-user / data-chat-real let app.js
+   update both live when they rename themselves or change their identity proof ({"t": "name"} over the presence socket).
+   chat: the chat they're shown in: their name then opens their profile (routers/people.py decides what you may see). Left out inside a link or a tick box #}
+{% macro person(uid, k, chat=none) %}{% if k %}{% if chat %}<a class="hx-chat-link" href="/people/{{ uid }}?chat={{ chat }}" title="Open their profile">{% endif %}<b data-chat-user="{{ uid }}">{{ k.username }}</b>{% if chat %}</a>{% endif %} <small class="hx-chat-real" data-chat-real="{{ uid }}" title="name on their identity proof">{{ k.real }}{{ ' ✓' if k.real and k.verified }}</small>{% else %}<b>deleted account</b>{% endif %}{% endmacro %}

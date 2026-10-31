@@ -1,0 +1,81 @@
+{% extends "base.html" %}{% from "_chatname.html" import person %}
+{# routers/chats.py chats_page(): companies = [{m (your membership, company + members loaded), chats (yours), others (the rest, only for CHAT_READERS), colleagues}],
+   each chat row = {chat, name, other (direct / personal: the other person), people [(id, username)], last (ChatMessage), by (its sender), preview, unread};
+   personal = rows of your personal chats (no company); asked = rows of your enquiries to companies you're not in (name = the company);
+   contacts = [(id, username)] you can message personally (anyone you share a company with);
+   known = {id: {username, real, verified}} (current usernames + identity names); readers = the positions that can read every chat; retention (days) #}
+{% block title %}Chats{% endblock %}
+{% macro chat_row(r, readonly=False) %}{% set c = r.chat %}<li><a href="/chats/{{ c.id }}#end" class="hx-chat-row{{ ' hx-chat-unread' if r.unread }}">
+<span class="hx-chat-ic" aria-hidden="true"><i class="fa-solid {{ 'fa-users' if c.kind == 'group' else 'fa-people-group' if c.kind == 'pgroup' else 'fa-envelope-open-text' if c.kind == 'enquiry' else 'fa-user' }}"></i></span>
+<span class="hx-chat-main"><span class="hx-chat-name">{% if c.kind == 'enquiry' %}<span class="hx-chat-tag">enquiry</span>{% endif %}{% if r.other and not readonly %}{{ person(r.other, known.get(r.other)) }}{% else %}<b>{{ r.name }}</b>{% endif %}{% if readonly %} <small>(read-only)</small>{% endif %}</span>
+<small>{% if c.kind in ('group', 'pgroup') or readonly %}{% for u, n in r.people %}<span data-chat-user="{{ u }}">{{ known[u].username if u in known else n }}</span>{{ ', ' if not loop.last }}{% endfor %} · {% endif %}{% if r.last %}<span{% if not r.by.gone %} data-chat-user="{{ r.by.user }}"{% endif %}>{{ r.by.username }}</span>: {{ r.preview }}{% else %}no messages yet{% endif %}</small></span>
+<span class="hx-chat-side">{% if r.last %}<small>{{ r.last.created_at|tenure }} ago</small>{% endif %}{% if r.unread %}<b class="hx-new">{{ r.unread }} new</b>{% endif %}</span></a></li>{% endmacro %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/chats</span><span class="hx-term-meta"><i class="fa-solid fa-lock"></i> encrypted at rest</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>chat --company</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// talk to anyone in your companies: one to one, or a group of people. The owner can chat too</p>
+<ul class="hx-warn-list" role="note"><li><i class="fa-solid fa-eye" aria-hidden="true"></i><span><b>Company chats aren't private from the company.</b> Each company's owner, co-owners, managers and HR can read every chat in it, yours included. <b>Personal chats are:</b> only the two of you can read them. Messages are encrypted at rest. If an account is deleted, its messages stay readable for {{ retention }} days, then are erased for good.</span></li></ul>
+</div>
+</section>
+{% if not companies and not personal and not asked %}<p class="hx-empty"><i class="fa-solid fa-comments"></i><span>Join or create a company first: chats are with the people in your companies.</span></p>{% endif %}
+<section class="hx-section" id="personal">
+<p class="hx-eyebrow">// personal chats · outside any company: only the people in them can read them</p>
+<div class="row g-4"><div class="col-lg-7">
+{% if personal %}<ul class="hx-chat-list">{% for r in personal %}{{ chat_row(r) }}{% endfor %}</ul>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-user-lock"></i><span>No personal chats yet: message a friend or anyone you work with, or start a group of friends.</span></p>{% endif %}
+</div>
+<div class="col-lg-5">{% if contacts %}<article class="hx-card hx-chat-new"><h2><i class="fa-solid fa-user-lock"></i> personal message</h2>
+<p class="hx-hint">// a normal chat, not a company one: no company's owner, managers or HR can read it</p>
+<form method="post" action="/chats/personal" class="hx-form">{{ csrf_input(request) }}
+<label class="visually-hidden" for="pm-who">Who</label><select name="user_id" id="pm-who" class="hx-select hx-select-lg hx-select-wide" required>{% for u, n in contacts %}{% set k = known.get(u) %}<option value="{{ u }}">{{ k.username if k else n }}{{ (' (' ~ k.real ~ ')') if k and k.real }}</option>{% endfor %}</select>
+<button class="hx-btn hx-btn-solid" data-busy="opening…"><span>open chat</span><i class="fa-solid fa-arrow-right"></i></button></form></article>{% endif %}
+<article class="hx-card hx-chat-new{{ ' hx-gap-sm' if contacts }}"><h2><i class="fa-solid fa-people-group"></i> personal group</h2>
+{% if friends %}<p class="hx-hint">// a group of your friends, outside any company: only the people in it can read it, and anyone in it can add their friends</p>
+<form method="post" action="/chats/pgroup" class="hx-form">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-tag"></i><span class="visually-hidden">Group name</span><input name="title" minlength="2" maxlength="60" placeholder="group name, e.g. weekend hikes" required></label>
+<div class="hx-chat-pick" role="group" aria-label="Friends in the group">{% for u, n in friends %}<label class="hx-choice"><input type="checkbox" name="members" value="{{ u }}"><i class="fa-solid fa-user-group"></i><span>{{ person(u, known.get(u)) }}</span><i class="fa-solid fa-check hx-check"></i></label>{% endfor %}</div>
+<button class="hx-btn hx-btn-solid" data-busy="starting…"><span>start the group</span><i class="fa-solid fa-people-group"></i></button></form>
+{% else %}<p class="hx-hint">// personal groups are made of friends: <a href="/friends">send friend requests</a> first</p>{% endif %}</article>
+</div></div>
+</section>
+{% if asked %}<section class="hx-section" id="enquiries">
+<p class="hx-eyebrow">// your enquiries · companies you contacted before joining: their owner, co-owners and HR answer; it's a company chat, so their managers can read it too</p>
+<div class="row g-4"><div class="col-lg-7"><ul class="hx-chat-list">{% for r in asked %}{{ chat_row(r) }}{% endfor %}</ul></div></div>
+</section>{% endif %}
+{% for co in companies %}{% set c = co.m.company %}<section class="hx-section" id="co-{{ c.id }}">
+<p class="hx-eyebrow">// company chats · {{ c.name }} · you're {{ positions[co.m.position].label }}{% if co.m.position in readers %} · you can read every chat here{% endif %}</p>
+<div class="row g-4"><div class="col-lg-7">
+{% if co.chats %}<ul class="hx-chat-list">{% for r in co.chats %}{{ chat_row(r) }}{% endfor %}</ul>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-comment-dots"></i><span>No chats in {{ c.name }} yet: start one on the right.</span></p>{% endif %}
+{% if co.others %}<p class="hx-eyebrow hx-gap">// the other chats in {{ c.name }} · you can read them as {{ positions[co.m.position].label }}, not write in them</p>
+<ul class="hx-chat-list">{% for r in co.others %}{{ chat_row(r, True) }}{% endfor %}</ul>{% endif %}
+</div>
+<div class="col-lg-5">{% if co.colleagues %}
+<article class="hx-card hx-chat-new"><h2><i class="fa-solid fa-comment"></i> message someone</h2>
+<form method="post" action="/chats/direct" class="hx-form">{{ csrf_input(request) }}<input type="hidden" name="company_id" value="{{ c.id }}">
+<label class="visually-hidden" for="dm-{{ c.id }}">Who</label><select name="user_id" id="dm-{{ c.id }}" class="hx-select hx-select-lg hx-select-wide" required>{% for x in co.colleagues %}{% set k = known.get(x.user_id) %}<option value="{{ x.user_id }}">{{ x.user.username }}{{ (' (' ~ k.real ~ ')') if k and k.real }} · {{ positions[x.position].label }}</option>{% endfor %}</select>
+<button class="hx-btn hx-btn-solid" data-busy="opening…"><span>open chat</span><i class="fa-solid fa-arrow-right"></i></button></form></article>
+<article class="hx-card hx-chat-new hx-gap-sm"><h2><i class="fa-solid fa-users"></i> group chat</h2>
+<p class="hx-hint">// name a group and pick who's in it: everyone in it sees the whole conversation</p>
+<button type="button" class="hx-btn" data-mdb-modal-init data-mdb-target="#group-{{ c.id }}"><i class="fa-solid fa-users"></i><span>start a group</span></button></article>
+{% else %}<p class="hx-hint">// nobody else is in {{ c.name }} yet</p>{% endif %}</div></div>
+</section>{% endfor %}
+</div>{% endblock %}
+{% block modals %}{% for co in companies if co.colleagues %}{% set c = co.m.company %}{# start a group: a dialog per company (reopens with the error if it's refused) #}
+<div class="modal fade hx-modal" id="group-{{ c.id }}" tabindex="-1" aria-labelledby="group-{{ c.id }}-title" aria-hidden="true">
+<div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+<div class="modal-header hx-term-bar"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><h2 class="modal-title hx-term-title" id="group-{{ c.id }}-title">~/chats/{{ c.name }}/new-group</h2>
+<button type="button" class="hx-icon-btn hx-modal-x" data-mdb-dismiss="modal" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
+<div class="modal-body">
+<form method="post" action="/chats/group" class="hx-form" id="group-{{ c.id }}-form">{{ csrf_input(request) }}<input type="hidden" name="company_id" value="{{ c.id }}">
+<label class="hx-field"><i class="fa-solid fa-tag"></i><span class="visually-hidden">Group name</span><input name="title" minlength="2" maxlength="60" placeholder="group name, e.g. backend team" required></label>
+<p class="hx-eyebrow">// who's in it (you are too)</p>
+<div class="hx-chat-pick" role="group" aria-label="People in the group">{% for x in co.colleagues %}<label class="hx-choice"><input type="checkbox" name="members" value="{{ x.user_id }}"><i class="fa-solid {{ positions[x.position].icon }}"></i><span>{{ person(x.user_id, known.get(x.user_id)) }} <small>· {{ positions[x.position].label }}</small></span><i class="fa-solid fa-check hx-check"></i></label>{% endfor %}</div>
+<p class="hx-hint">// {{ c.name }}'s owner, co-owners, managers and HR can read every chat in it, groups included</p>
+</form>
+</div>
+<div class="modal-footer"><button type="button" class="hx-btn hx-btn-ghost" data-mdb-dismiss="modal"><span>cancel</span></button>
+<button class="hx-btn hx-btn-solid" form="group-{{ c.id }}-form" data-busy="starting…"><span>start the group</span><i class="fa-solid fa-users"></i></button></div>
+</div></div></div>{% endfor %}{% endblock %}

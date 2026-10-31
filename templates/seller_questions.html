@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{# routers/seller.py questions_page(): c, s, rows [(ProductQuestion, Product)] (unanswered first, the ones the AI passed to you on top), manager #}
+{% block title %}Questions · {{ c.name }}{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/companies/{{ c.name }}/shop/questions</span><span class="hx-term-meta"><i class="fa-solid fa-circle-question"></i> {{ rows|length }}</span></div>
+<div class="hx-term-body"><h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>questions</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// shoppers' questions: the AI answers what the listing covers and passes the rest to you · your answers are shown to everyone and the AI uses them next time · <a href="/companies/{{ c.id }}/shop">shop dashboard</a></p></div>
+</section>
+<section class="hx-section">{% if rows %}<ol class="hx-qa">{% for q, p in rows %}<li class="hx-card hx-qa-item{{ ' hx-qa-waiting' if q.ask_seller and not q.seller_answer }}" id="q-{{ q.id }}">
+<p class="hx-qa-q"><i class="fa-solid fa-circle-question"></i> {{ q.question }} <small>· <a href="/companies/{{ c.id }}/shop/products/{{ p.id }}">{{ p.title|truncate(40) }}</a> · {{ q.asker }}, {{ q.created_at|tenure }} ago</small></p>
+{% if q.answer %}<p class="hx-qa-a"><i class="fa-solid fa-wand-magic-sparkles"></i> {{ q.answer }} <small>({{ q.confidence }}{{ ' · passed to you' if q.ask_seller }})</small></p>{% endif %}
+{% if q.seller_answer %}<p class="hx-qa-seller"><i class="fa-solid fa-store"></i> {{ q.seller_answer }} <small>· {{ q.answered_by }}</small></p>{% endif %}
+<form method="post" action="/companies/{{ c.id }}/shop/questions/{{ q.id }}" class="hx-form hx-qa-answer">{{ csrf_input(request) }}<label class="hx-field"><i class="fa-solid fa-reply"></i><span class="visually-hidden">Answer</span><input name="text" minlength="2" maxlength="2000" required value="{{ q.seller_answer }}" placeholder="answer it (shown to everyone)"></label><button class="hx-btn hx-btn-sm"><span>{{ 'edit' if q.seller_answer else 'answer' }}</span></button></form></li>{% endfor %}</ol>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-circle-question"></i><span>No questions yet.</span></p>{% endif %}</section>
+</div>{% endblock %}

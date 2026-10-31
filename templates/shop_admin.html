@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{# routers/shopadmin.py admin_page() (PLATFORM_ADMINS only): won [(currency, orders, gross, commission)] successful sales, moving [(...)] on their way, balances [(Shop, name, ledger)],
+   recent settlements, currencies, pay (payments mode), commission (%) #}
+{% block title %}Platform earnings{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/shop/admin</span><span class="hx-term-meta"><i class="fa-solid fa-user-shield"></i> platform admin</span></div>
+<div class="hx-term-body"><h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>earnings --platform</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// {{ '%g'|format(commission|float) }}% of every successful sale (delivered + paid) · payments: {{ pay }}{{ ' (test: no money moves)' if pay == 'test' }}</p>
+<div class="hx-totals">{% for cur, n, gross, com in won %}<div><small>earned ({{ cur }})</small><b>{{ price(cur, com or 0) }}</b><span>{{ n }} successful order{{ '' if n == 1 else 's' }} · sales {{ price(cur, gross or 0)|striptags }}</span></div>{% else %}<div><small>earned</small><b>0</b><span>no successful sales yet</span></div>{% endfor %}
+{% for cur, n, gross, com in moving %}<div><small>on its way ({{ cur }})</small><b>{{ price(cur, com or 0) }}</b><span>commission on {{ n }} order{{ '' if n == 1 else 's' }} not delivered yet · {{ price(cur, gross or 0)|striptags }}</span></div>{% endfor %}</div></div>
+</section>
+<section class="hx-section"><p class="hx-eyebrow">// sellers · balance with the platform (+ = the platform owes them)</p>
+{% if balances %}<div class="hx-olist">{% for s, name, led in balances %}<div class="hx-card hx-orow"><span class="hx-orow-info"><b>{{ name }}</b><small>shop {{ s.status }} · prices in {{ s.currency }} · opened {{ s.opened_at|tenure }} ago</small></span>
+<span class="hx-orow-end">{% for cur, x in led.items() %}<b>{{ price(cur, x.balance)|striptags }}</b><small>{{ x.orders }} successful · commission {{ price(cur, x.commission)|striptags }} · paid out {{ price(cur, x.paid_out)|striptags }} · received {{ price(cur, x.paid_in)|striptags }}</small>{% else %}<small>no successful sales</small>{% endfor %}</span></div>{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-store"></i><span>No shops yet.</span></p>{% endif %}</section>
+{% if stuck %}<section class="hx-section"><p class="hx-eyebrow">// refunds Cashfree keeps turning down: refund these by hand</p><ul class="hx-low">{% for o in stuck %}<li><span>{{ o.number }} · {{ o.company_name }} · {{ o.buyer_name }} · {{ o.refund_error }}</span><b>{{ price(o.currency, o.total_minor)|striptags }}</b></li>{% endfor %}</ul></section>{% endif %}
+<section class="hx-section"><p class="hx-eyebrow">// record a settlement</p>
+<form method="post" action="/shop/admin/settlements" class="hx-card hx-form">{{ csrf_input(request) }}
+<div class="hx-reg-row"><label class="visually-hidden" for="st-co">Shop</label><select name="company_id" id="st-co" class="hx-select hx-select-lg" required>{% for s, name, led in balances %}<option value="{{ s.company_id }}">{{ name }}</option>{% endfor %}</select>
+<label class="visually-hidden" for="st-dir">Direction</label><select name="direction" id="st-dir" class="hx-select hx-select-lg"><option value="to_seller">paid out to the seller</option><option value="to_platform">received from the seller</option></select></div>
+<div class="hx-reg-row"><label class="hx-field"><i class="fa-solid fa-coins"></i><span class="visually-hidden">Amount</span><input name="amount" type="number" min="0.01" step="0.01" required placeholder="amount"></label>
+<label class="visually-hidden" for="st-cur">Currency</label><select name="currency" id="st-cur" class="hx-select hx-select-lg">{% for k in currencies %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select>
+<label class="hx-field"><i class="fa-solid fa-receipt"></i><span class="visually-hidden">Bank reference</span><input name="reference" minlength="4" maxlength="64" required placeholder="bank reference (UTR…)"></label></div>
+<label class="hx-field"><i class="fa-solid fa-comment"></i><span class="visually-hidden">Note</span><input name="note" maxlength="300" placeholder="note (optional)"></label>
+<button class="hx-btn hx-btn-solid" data-busy="recording…"><span>record it</span><i class="fa-solid fa-check"></i></button><p class="hx-hint">// the seller's owner is told; it shows on their statement and in the activity log</p></form></section>
+{% if recent %}<section class="hx-section"><p class="hx-eyebrow">// recent settlements</p><ul class="hx-low">{% for x in recent %}<li><span>{{ at(x.at, '%d %b %Y') }} · {{ x.company_name }} · {{ 'paid out' if x.direction == 'to_seller' else 'received' }} · {{ x.reference }}{{ ' · ' ~ x.note if x.note }}</span><b>{{ price(x.currency, x.amount_minor)|striptags }}</b></li>{% endfor %}</ul></section>{% endif %}
+</div>{% endblock %}

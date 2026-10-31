@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% from "_chatname.html" import person %}
+{# routers/friends.py friends_page(): friends / incoming / outgoing [{id, username, real, verified, since, at, chat (their personal chat id or None)}], blocked [{id, username, ...}] #}
+{% block title %}Friends{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/friends</span><span class="hx-term-meta"><i class="fa-solid fa-user-lock"></i> private chats</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>friends --list</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// friends chat privately, one to one or in personal groups: no company can read those chats. Company chats stay as they are</p>
+<form method="post" action="/friends/request" class="hx-form hx-friend-ask">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-user-plus"></i><span class="visually-hidden">Their username</span><input name="username" minlength="3" maxlength="32" pattern="[A-Za-z0-9_]+" placeholder="their username, e.g. alex" autocomplete="off" spellcheck="false" required></label>
+<button class="hx-btn hx-btn-solid" data-busy="sending…"><span>send a friend request</span><i class="fa-solid fa-paper-plane"></i></button></form>
+</div></section>
+{% if incoming %}<section class="hx-section" id="requests"><p class="hx-eyebrow">// asking to be your friend · {{ incoming|length }}</p>
+<ul class="hx-friend-list">{% for f in incoming %}<li class="hx-friend hx-friend-new"><span class="hx-friend-who">{{ person(f.id, f) }}<small>asked {{ f.at|tenure }} ago</small></span>
+<span class="hx-friend-acts"><form method="post" action="/friends/{{ f.id }}/accept">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-solid"><i class="fa-solid fa-check"></i><span>accept</span></button></form>
+<form method="post" action="/friends/{{ f.id }}/decline">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-xmark"></i><span>decline</span></button></form>
+<form method="post" action="/friends/{{ f.id }}/block">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost" title="no more requests or personal messages from them"><i class="fa-solid fa-ban"></i><span>block</span></button></form></span></li>{% endfor %}</ul></section>{% endif %}
+<section class="hx-section" id="friends"><p class="hx-eyebrow">// your friends · {{ friends|length }}</p>
+{% if friends %}<ul class="hx-friend-list">{% for f in friends %}<li class="hx-friend"><span class="hx-friend-who">{{ person(f.id, f) }}<small>friends for {{ f.since|tenure }}</small></span>
+<span class="hx-friend-acts">{% if f.chat %}<a href="/chats/{{ f.chat }}#end" class="hx-btn hx-btn-sm hx-btn-solid" data-chat-open="{{ f.chat }}"><i class="fa-solid fa-comment"></i><span>chat</span></a>
+{% else %}<form method="post" action="/chats/personal">{{ csrf_input(request) }}<input type="hidden" name="user_id" value="{{ f.id }}"><button class="hx-btn hx-btn-sm hx-btn-solid"><i class="fa-solid fa-comment"></i><span>chat</span></button></form>{% endif %}
+<form method="post" action="/friends/{{ f.id }}/remove">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-user-minus"></i><span>unfriend</span></button></form>
+<form method="post" action="/friends/{{ f.id }}/block">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost" title="no more requests or personal messages from them"><i class="fa-solid fa-ban"></i><span>block</span></button></form></span></li>{% endfor %}</ul>
+<p class="hx-hint">// start a personal group with your friends on <a href="/chats#personal">chats</a></p>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-user-group"></i><span>No friends yet: send a request above with their username.</span></p>{% endif %}</section>
+{% if outgoing %}<section class="hx-section"><p class="hx-eyebrow">// waiting for them to accept</p>
+<ul class="hx-friend-list">{% for f in outgoing %}<li class="hx-friend"><span class="hx-friend-who">{{ person(f.id, f) }}<small>asked {{ f.at|tenure }} ago</small></span>
+<span class="hx-friend-acts"><form method="post" action="/friends/{{ f.id }}/cancel">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-rotate-left"></i><span>withdraw</span></button></form></span></li>{% endfor %}</ul></section>{% endif %}
+{% if blocked %}<section class="hx-section"><p class="hx-eyebrow">// blocked: no friend requests or personal messages from them</p>
+<ul class="hx-friend-list">{% for f in blocked %}<li class="hx-friend"><span class="hx-friend-who">{{ person(f.id, f) }}</span>
+<span class="hx-friend-acts"><form method="post" action="/friends/{{ f.id }}/unblock">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-unlock"></i><span>unblock</span></button></form></span></li>{% endfor %}</ul></section>{% endif %}
+</div>{% endblock %}

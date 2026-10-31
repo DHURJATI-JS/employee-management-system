@@ -1,0 +1,32 @@
+{% extends "base.html" %}{% from "_zone.html" import zone_select %}
+{% block title %}Sign up{% endblock %}
+{% block content %}<section class="hx-term hx-auth">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/auth/signup.sh</span><span class="hx-term-meta"><i class="fa-solid fa-shield-halved"></i> csrf on</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>./signup</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<div class="hx-boot" aria-hidden="true">
+<p><span class="hx-ok">[  ok  ]</span> csrf token issued</p>
+<p><span class="hx-ok">[  ok  ]</span> passwords stored as scrypt hashes only</p>
+<p><span class="hx-ok">[  ok  ]</span> email + phone verified first</p>
+<p><span class="hx-wait">[ wait ]</span> awaiting input<span class="hx-cursor">_</span></p>
+</div>
+<form method="post" class="hx-form">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-user"></i><span class="visually-hidden">Username</span><span class="hx-pfx" aria-hidden="true">user:</span><input name="username" placeholder="username" autocomplete="username" spellcheck="false" pattern="[a-zA-Z0-9_]{3,32}" required autofocus data-username-check></label>
+<p class="hx-hint">// 3-32 chars: a-z 0-9 _ · it must be unique, and capital letters don't make it different (Alex = alex)</p>
+<p class="hx-hint" data-username-note aria-live="polite" hidden></p>
+<label class="hx-field"><i class="fa-solid fa-envelope"></i><span class="visually-hidden">Email</span><span class="hx-pfx" aria-hidden="true">mail:</span><input name="email" type="email" placeholder="you@domain.tld" autocomplete="email" spellcheck="false" maxlength="255" required></label>
+<label class="hx-field"><i class="fa-solid fa-mobile-screen-button"></i><span class="visually-hidden">Phone number</span><span class="hx-pfx" aria-hidden="true">tel:</span><input name="phone" type="tel" placeholder="+&lt;country code&gt; number" autocomplete="tel" inputmode="tel" maxlength="32" required></label>
+<label class="hx-field hx-date"><i class="fa-solid fa-cake-candles"></i><span class="visually-hidden">Date of birth (you must be 18 or older)</span><span class="hx-pfx" aria-hidden="true">born:</span><input name="dob" type="date" min="{{ min_dob }}" max="{{ max_dob }}" autocomplete="bday" required></label>
+<div class="hx-reg-row">{{ zone_select("reg-zone", default_zone, guess=True) }}</div>
+<p class="hx-hint">// your region and time zone: every time is shown on your clock, amounts also in your region's currency, and your national holidays on your calendar (no task can be due on them) · change it any time in settings</p>
+<ul class="hx-warn-list" role="note"><li><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span><b>Your date of birth can't be changed later.</b> Enter it exactly as it is on your identity proof: it's used when your ID is verified.</span></li>
+<li><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i><span><b>Signing up means you accept the <a href="/terms">terms &amp; conditions</a>.</b> {{ app_name }} is a student project, isn't free to use (ask its owner first) and comes with no liability.</span></li></ul>
+<p class="hx-hint">// you must be 18 or older · a 6-digit code goes to your email and your phone</p>
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Password</span><span class="hx-pfx" aria-hidden="true">passwd:</span><input name="password" type="password" placeholder="8+ characters, not a common one" autocomplete="new-password" minlength="8" maxlength="128" required><button type="button" class="hx-eye" aria-label="Show password" aria-pressed="false"><i class="fa-solid fa-eye"></i><i class="fa-solid fa-eye-slash"></i></button></label>
+<div class="hx-strength" data-strength aria-live="polite"><span class="hx-bar"><span></span></span><b>entropy: --</b></div>
+<p class="hx-hint hx-caps" data-caps hidden><i class="fa-solid fa-triangle-exclamation"></i> caps lock is on</p>
+<button class="hx-btn" data-busy="sending codes…"><span>send verification codes</span><i class="fa-solid fa-paper-plane"></i></button>
+</form>
+<p class="hx-alt">have an account? <a href="/login">./login</a></p>
+</div>
+</section>{% endblock %}

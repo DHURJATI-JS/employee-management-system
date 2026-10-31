@@ -1,0 +1,26 @@
+{# one listed company in search results / recommendations / the AI finder. row = {company (salaries loaded), match (0-100 or None), why (shared words), members (count),
+   joined (you're in it), checks (finder: [{label, state 0 meets / 1 unknown / 2 misses, detail}])}.
+   A listed company's invite code (= its id) is public: shown with a copy button to everyone, logged in or not #}
+{% set c = row.company %}{% set pic = picture('c', c.id) %}{# solo: single company mode, the card fills the page #}
+<article class="hx-card hx-result hx-reveal{{ ' hx-result-solo' if solo }}">
+<div class="hx-banner" aria-hidden="true">{% if pic %}<img class="hx-banner-bg" src="{{ pic }}" alt="" loading="lazy" decoding="async"><img class="hx-banner-logo" src="{{ pic }}" alt="" width="112" height="112" loading="lazy" decoding="async">
+{% else %}<span class="hx-banner-none"><i class="fa-solid fa-building"></i></span>{% endif %}</div>
+<div class="hx-result-head">
+<div class="hx-result-name"><h2>{{ c.name }}</h2><small>{{ row.members }} member{{ '' if row.members == 1 else 's' }} · since {{ at(c.created_at, '%b %Y') }}{% if not c.allow_other_companies %} · <i class="fa-solid fa-people-arrows"></i> works only here{% endif %}</small></div>
+{% if row.match is not none %}<span class="hx-match" title="pgvector cosine similarity"><b>{{ row.match }}%</b><small>match</small></span>{% endif %}</div>
+{% if row.match is not none %}<span class="hx-bar hx-match-bar" aria-hidden="true"><span data-pct="{{ row.match }}"></span></span>{% endif %}
+{% if c.location_address or c.website %}<p class="hx-co-links">{% if c.location_address %}<a href="{{ maps_link(c.location_lat, c.location_lng) }}" target="_blank" rel="noopener noreferrer" title="Open on OpenStreetMap"><i class="fa-solid fa-location-dot"></i>{{ c.location_address|truncate(70) }}</a>{% endif %}
+{% if c.website %}<a href="{{ c.website }}" target="_blank" rel="noopener noreferrer nofollow ugc"><i class="fa-solid fa-link"></i>{{ c.website.split('//', 1)[-1]|truncate(40) }}</a>{% endif %}</p>{% endif %}
+{% if c.description %}<p class="hx-about">{{ c.description }}</p>{% else %}<p class="hx-about hx-none">// no description yet</p>{% endif %}
+{% if c.hiring %}<p class="hx-about"><b>hiring:</b> {{ c.hiring }}</p>{% endif %}
+{% set sal = c.salary_of() %}<div class="hx-chips">{% for key in c.positions %}<span class="hx-pos"><i class="fa-solid {{ positions[key].icon }}"></i>{{ positions[key].label }}{% if key in sal %}<b class="hx-pos-pay">≥ {{ '{:,}'.format(sal[key]) }}</b>{% endif %}</span>{% endfor %}</div>
+<p class="hx-hint hx-card-pay">// {{ ('minimum salaries in ' ~ c.salary_currency ~ ' per ' ~ c.salary_period) if c.salary_currency else 'salaries not published yet' }}{% set yours = currency_of(user.region) if user else None %}{% if yours and c.salary_currency and yours != c.salary_currency and join_as in sal %} · {{ positions[join_as].label }} starts at {{ money(c.salary_currency, sal[join_as]) }}{% endif %}</p>
+{% if row.checks %}<ul class="hx-checks" aria-label="How {{ c.name }} fits what you asked">{% for ch in row.checks %}<li class="hx-fit hx-fit-{{ ch.state }}"><i class="fa-solid {{ ('fa-circle-check', 'fa-circle-question', 'fa-circle-xmark')[ch.state] }}" aria-hidden="true"></i><span><b>{{ ch.label }}</b> {{ ch.detail }}<span class="visually-hidden"> ({{ ('meets it', 'unknown', 'misses it')[ch.state] }})</span></span></li>{% endfor %}</ul>{% endif %}
+{% if row.fit %}<p class="hx-fit hx-fit-{{ row.fit[0] }}"><i class="fa-solid {{ ('fa-circle-check', 'fa-circle-question', 'fa-circle-down')[row.fit[0]] }}"></i>{{ row.fit[1] }}</p>{% endif %}
+{% if row.why %}<p class="hx-why"><i class="fa-solid fa-link"></i><span>matched:</span>{% for w in row.why %}<mark>{{ w }}</mark>{% endfor %}</p>{% endif %}
+{% if c.listed %}<div class="hx-invite"><span class="hx-invite-label"><i class="fa-solid fa-ticket"></i> invite code</span><code>{{ c.id }}</code>
+<button type="button" class="hx-btn hx-btn-sm" data-copy="{{ c.id }}" aria-label="Copy {{ c.name }}'s invite code" title="Copy invite code"><i class="fa-solid fa-copy"></i><span>copy invite code</span></button></div>{% endif %}
+<div class="hx-result-go">{% if row.joined %}<a href="/workplaces#c-{{ c.id }}" class="hx-btn hx-btn-sm"><i class="fa-solid fa-briefcase"></i><span>you're in it</span></a>
+{% else %}<a href="/companies/join/{{ c.id }}" class="hx-btn hx-btn-sm hx-btn-solid"><span>join as {{ positions[join_as].label }}</span><i class="fa-solid fa-arrow-right"></i></a>
+<a href="/companies/join/{{ c.id }}#enquire" class="hx-btn hx-btn-sm hx-btn-ghost" title="ask the owner, co-owners and HR something before joining"><i class="fa-solid fa-envelope-open-text"></i><span>enquire</span></a>{% endif %}</div>
+</article>

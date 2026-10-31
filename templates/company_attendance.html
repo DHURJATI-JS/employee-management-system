@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{# routers/attendance.py: c, everyone (the owner, co-owners, managers, HR see everyone tracked; others only themselves), days + opens {day: a working day that isn't a holiday}, today_is,
+   rows [{m, cells [{mark, sign, off, title, now}], present, expected, absent, leave, worked}], label, older / newer (a month's first day, or None), hours, tz, full (a full day) #}
+{% block title %}Attendance · {{ c.name }}{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/companies/{{ c.name }}/attendance</span><span class="hx-term-meta"><i class="fa-solid fa-user-clock"></i> {{ label }}</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>attendance {{ c.name }}</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// {% if everyone %}everyone tracked at {{ c.name }}{% else %}your own days: only the owner, co-owners, managers and HR see everyone's{% endif %} · active time inside working hours ({{ hours }}, {{ tz }}) · owners, co-owners and freelancers aren't tracked</p>
+<div class="hx-att-nav"><a href="/companies/{{ c.id }}/dashboard" class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-arrow-left"></i><span>company dashboard</span></a>
+{% if older %}<a href="/companies/{{ c.id }}/attendance?month={{ older.strftime('%Y-%m') }}" class="hx-btn hx-btn-sm"><i class="fa-solid fa-chevron-left"></i><span>{{ older.strftime('%b %Y') }}</span></a>{% endif %}
+<b>{{ label }}</b>
+{% if newer %}<a href="/companies/{{ c.id }}/attendance?month={{ newer.strftime('%Y-%m') }}" class="hx-btn hx-btn-sm"><span>{{ newer.strftime('%b %Y') }}</span><i class="fa-solid fa-chevron-right"></i></a>{% endif %}</div>
+</div>
+</section>
+<section class="hx-section">
+{% if rows %}<p class="hx-att-legend"><span><span class="hx-att-mark hx-cal-att-full" aria-hidden="true">✓</span>full day</span><span><span class="hx-att-mark hx-cal-att-part" aria-hidden="true">◐</span>part of the day</span><span><span class="hx-att-mark hx-cal-att-absent" aria-hidden="true">✗</span>absent</span><span><span class="hx-att-mark hx-cal-att-leave" aria-hidden="true">☾</span>on leave</span><span><span class="hx-att-mark hx-cal-att-today" aria-hidden="true">●</span>today</span><span><span class="hx-att-mark hx-att-blank" aria-hidden="true"></span>day off or holiday</span></p>
+<div class="hx-att-wrap" tabindex="0" role="region" aria-label="Attendance, {{ label }}"><table class="hx-att"><thead><tr><th scope="col" class="hx-att-who">member</th>{% for d in days %}<th scope="col" class="{{ 'hx-att-closed' if not opens[d] }}{{ ' hx-att-now' if d == today_is }}"><small>{{ d.strftime('%a')[0] }}</small>{{ d.day }}</th>{% endfor %}<th scope="col" class="hx-att-sum">present</th><th scope="col" class="hx-att-sum">absent</th><th scope="col" class="hx-att-sum">leave</th><th scope="col" class="hx-att-sum">worked</th></tr></thead>
+<tbody>{% for r in rows %}<tr><th scope="row" class="hx-att-who"><a href="/companies/{{ c.id }}/members/{{ r.m.user_id }}">{{ r.m.user.username }}</a><small>{{ positions[r.m.position].label }}</small></th>{% for x in r.cells %}<td{% if x.now %} class="hx-att-now"{% endif %}>{% if x.mark %}<span class="hx-att-mark hx-cal-att-{{ x.mark }}" role="img" title="{{ x.title }}" aria-label="{{ x.title }}">{{ x.sign }}</span>{% elif x.off %}<span class="hx-att-mark hx-att-blank" role="img" title="{{ x.title }}" aria-label="{{ x.title }}"></span>{% endif %}</td>{% endfor %}<td class="hx-att-sum"><b>{{ r.present }}</b> of {{ r.expected }}</td><td class="hx-att-sum">{{ r.absent }}</td><td class="hx-att-sum">{{ r.leave }}</td><td class="hx-att-sum">{{ r.worked }}</td></tr>{% endfor %}</tbody></table></div>
+<p class="hx-hint hx-gap-sm">// point at a day for its hours · a full day is 90% of the working hours ({{ full }} here) · approved leave isn't an absence · today fills in as the day goes on</p>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-user-clock"></i><span>Nobody's attendance is tracked here yet: owners, co-owners and freelancers aren't tracked, and staff appear as soon as they join.</span></p>{% endif %}
+</section>
+</div>{% endblock %}

@@ -1,0 +1,78 @@
+{% extends "base.html" %}{% from "_shop.html" import status_pill with context %}
+{# routers/seller.py shop_page(): c, me, s (Shop or None); without a shop: can_open (owner / co-owner), commission, currencies. With one: manager, ops (managers + shop staff:
+   orders, products, questions, the AI's tasks), money (owner, co-owners, managers, HR: the charts, the statement, the balance; never just the shop staff), staff {user ids},
+   recent orders, todo (to pack / ship), low (products low on stock), asked (questions waiting), tasks (the AI's ShopTasks), returns (waiting), counts {status: products},
+   ledger {currency: {...}} (money only), days (the charts' period), hook_set, months (statement picker), pay. Charts: app.js [data-shop-charts] fetches /shop/data (pandas) and draws them with Chart.js #}
+{% block title %}Shop · {{ c.name }}{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/companies/{{ c.name }}/shop</span><span class="hx-term-meta"><i class="fa-solid fa-store"></i> {{ ('open' if s.status == 'open' else 'paused') if s else 'no shop yet' }}</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>shop {{ c.name }}</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+{% if s %}<p class="hx-sub">// sell to everyone on {{ app_name }} · <a href="/shop/s/{{ s.public_id }}">see your shop front</a> · <a href="/companies/{{ c.id }}/dashboard">company dashboard</a></p>
+{% if not ops %}<p class="hx-hint"><i class="fa-solid fa-chart-pie"></i> you see the shop's numbers as {{ c.name }}'s HR; orders and products are run by its managers and the shop staff they pick</p>{% endif %}
+{% if not money %}<p class="hx-hint"><i class="fa-solid fa-lock"></i> sales, the statement and the balance are for the owner, co-owners, managers and HR</p>{% endif %}
+{% if ops %}<div class="hx-row-actions hx-gap-sm"><a class="hx-btn hx-btn-sm{{ ' hx-btn-solid' if todo }}" href="/companies/{{ c.id }}/shop/orders?status=todo"><i class="fa-solid fa-box"></i><span>orders to ship · {{ todo }}</span></a>
+<a class="hx-btn hx-btn-sm" href="/companies/{{ c.id }}/shop/products"><i class="fa-solid fa-tags"></i><span>products · {{ counts.get('active', 0) }} live{{ ', ' ~ counts.get('draft') ~ ' drafts' if counts.get('draft') }}</span></a>
+<a class="hx-btn hx-btn-sm{{ ' hx-btn-solid' if asked }}" href="/companies/{{ c.id }}/shop/questions"><i class="fa-solid fa-circle-question"></i><span>questions waiting · {{ asked }}</span></a>
+{% if returns %}<a class="hx-btn hx-btn-sm hx-btn-solid" href="/companies/{{ c.id }}/shop/orders?status=returns"><i class="fa-solid fa-rotate-left"></i><span>returns to answer · {{ returns }}</span></a>{% endif %}</div>{% endif %}{% else %}<p class="hx-sub">// {{ c.name }} doesn't sell on {{ app_name }} yet</p>{% endif %}
+</div></section>
+{% if not s %}<section class="hx-section"><p class="hx-eyebrow">// open a shop: what you get</p>
+<div class="hx-benefits">{% for icon, title, text in [("fa-chart-line", "competitor price tracking", "similar products on the marketplace and any competitor's page you add: their prices and ratings every day, on a chart next to yours"),
+  ("fa-chart-pie", "revenue tracking", "sales by day, category, status and payment, worked out with pandas and drawn as charts; a monthly Excel statement with every order and its tax"),
+  ("fa-wand-magic-sparkles", "an AI that assigns tasks", "packing, restocking, replying to bad reviews, answering questions, re-pricing: given to your least busy shop staff, in working hours"),
+  ("fa-truck-fast", "couriers + your own delivery", "Blue Dart, Delhivery, DTDC, India Post and more, or your own delivery person with a no-login delivery link and the buyer's 6-digit code"),
+  ("fa-satellite-dish", "live shipping for customers", "every step reaches the buyer live; couriers or aggregators can push updates to your signed webhook"),
+  ("fa-star", "photos, videos, reviews", "up to 8 photos + 2 videos per product; verified buyers rate and review with photos and videos; an AI sums reviews up and answers shoppers' questions")] %}
+<article class="hx-card hx-benefit"><i class="fa-solid {{ icon }}"></i><h2>{{ title }}</h2><p>{{ text }}</p></article>{% endfor %}</div>
+{% if can_open %}<form method="post" action="/companies/{{ c.id }}/shop/open" class="hx-card hx-form hx-open-shop">{{ csrf_input(request) }}
+<div class="hx-reg-row"><label class="visually-hidden" for="shop-cur">Currency</label><select name="currency" id="shop-cur" class="hx-select hx-select-lg">{% for k in currencies %}<option value="{{ k }}"{{ ' selected' if k == (c.salary_currency or 'INR') }}>prices in {{ k }}</option>{% endfor %}</select>
+<label class="hx-choice"><input type="checkbox" name="accept_commission" value="true" required><i class="fa-solid fa-handshake"></i><span>I accept {{ app_name }}'s {{ '%g'|format(commission|float) }}% commission on every successful sale (delivered and paid)</span><i class="fa-solid fa-check hx-check"></i></label></div>
+<button class="hx-btn hx-btn-solid" data-busy="opening…"><span>open {{ c.name }}'s shop</span><i class="fa-solid fa-store"></i></button>
+<p class="hx-hint">// online payments are collected by {{ app_name }} and paid out to you minus the commission; on cash-on-delivery sales you pay the commission. Nothing is charged until a sale succeeds</p></form>
+{% else %}<p class="hx-hint">// only the owner or a co-owner can open the shop</p>{% endif %}</section>
+{% else %}{% if money %}
+<section class="hx-section" id="numbers" data-shop-charts="/companies/{{ c.id }}/shop/data" data-days="{{ days }}">
+<div class="hx-chart-filters" role="group" aria-label="Period"><span class="hx-eyebrow">// numbers for the last</span>{% for d, label in [(7, '7 days'), (30, '30 days'), (90, '90 days'), (365, 'year')] %}<button type="button" class="hx-btn hx-btn-sm{{ ' hx-btn-solid' if d == days }}" data-days-pick="{{ d }}" aria-pressed="{{ 'true' if d == days else 'false' }}"><span>{{ label }}</span></button>{% endfor %}
+<form method="get" action="/companies/{{ c.id }}/shop/statement" class="hx-statement"><label class="visually-hidden" for="st-month">Month</label><select name="month" id="st-month" class="hx-select hx-select-lg">{% for m in months %}<option value="{{ m }}">{{ m }}</option>{% endfor %}</select><button class="hx-btn hx-btn-sm"><i class="fa-solid fa-file-excel"></i><span>Excel statement (tax)</span></button></form></div>
+<div class="hx-kpis" data-kpis>{% for k, label in [("sales", "sales"), ("orders", "orders"), ("aov", "average order"), ("units", "units sold"), ("delivered", "delivered + paid"), ("commission", "commission (platform)")] %}<div class="hx-kpi"><small>{{ label }}</small><b data-kpi="{{ k }}">…</b></div>{% endfor %}</div>
+<div class="hx-charts">
+<figure class="hx-card hx-chart hx-chart-wide"><figcaption>sales by day <small data-cur></small></figcaption><div class="hx-chart-box"><canvas data-chart="sales" aria-label="Sales by day" role="img"></canvas></div><details class="hx-chart-table"><summary>table</summary><table data-table="sales"></table></details></figure>
+<figure class="hx-card hx-chart"><figcaption>sales by category</figcaption><div class="hx-chart-box"><canvas data-chart="category" aria-label="Sales by category" role="img"></canvas></div><details class="hx-chart-table"><summary>table</summary><table data-table="category"></table></details></figure>
+<figure class="hx-card hx-chart"><figcaption>orders by status</figcaption><div class="hx-chart-box"><canvas data-chart="status" aria-label="Orders by status" role="img"></canvas></div><details class="hx-chart-table"><summary>table</summary><table data-table="status"></table></details></figure>
+<figure class="hx-card hx-chart"><figcaption>how buyers pay</figcaption><div class="hx-chart-box"><canvas data-chart="method" aria-label="Sales by payment method" role="img"></canvas></div><details class="hx-chart-table"><summary>table</summary><table data-table="method"></table></details></figure>
+<figure class="hx-card hx-chart"><figcaption>top products</figcaption><div class="hx-chart-box"><canvas data-chart="top" aria-label="Top products by sales" role="img"></canvas></div><details class="hx-chart-table"><summary>table</summary><table data-table="top"></table></details></figure>
+</div>
+<p class="hx-hint">// sales = orders placed (not cancelled, returned or left unpaid), tax included · worked out with pandas · the statement's chart is drawn with matplotlib</p>
+</section>
+<section class="hx-section" id="money"><p class="hx-eyebrow">// you and the platform · {{ '%g'|format(commission|float) }}% on successful sales</p>
+{% if ledger %}<div class="hx-totals">{% for cur, x in ledger.items() %}<div><small>balance ({{ cur }})</small><b>{{ price(cur, x.balance) }}</b><span>{{ 'the platform owes you' if x.balance > 0 else 'you owe the platform' if x.balance < 0 else 'settled' }} · {{ x.orders }} successful order{{ '' if x.orders == 1 else 's' }} · commission {{ price(cur, x.commission)|striptags }}</span></div>{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-scale-balanced"></i><span>No successful sales yet: the commission only counts once an order is delivered and paid.</span></p>{% endif %}</section>{% endif %}
+{% if ops %}<section class="hx-section" id="ai"><p class="hx-eyebrow">// what the AI asked for · {{ 'on' if s.ai_tasks else 'off (settings)' }}</p>
+{% if tasks %}<ul class="hx-ai-tasks">{% for t in tasks %}<li class="hx-ai-{{ t.status }}"><i class="fa-solid {{ 'fa-circle-check' if t.status == 'given' else 'fa-hourglass-half' }}"></i><span><b>{{ t.title }}</b><small>{{ 'given ' ~ t.note ~ ' · ' if t.status == 'given' }}{{ 'waiting for working hours' if t.status == 'pending' }}{{ t.created_at|tenure }} ago</small></span>{% if t.task_id %}<a href="/companies/{{ c.id }}/tasks#task-{{ t.task_id }}">task →</a>{% endif %}</li>{% endfor %}</ul>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-wand-magic-sparkles"></i><span>Nothing yet: new orders, low stock, bad reviews, questions it can't answer and cheaper competitors become tasks for your shop staff.</span></p>{% endif %}</section>
+<div class="hx-two">
+<section class="hx-section"><p class="hx-eyebrow">// recent orders</p>{% if recent %}<div class="hx-olist">{% for o in recent %}<a class="hx-card hx-orow" href="/companies/{{ c.id }}/shop/orders/{{ o.id }}"><span class="hx-orow-info"><b>{{ o.number }} · {{ o.buyer_name }}</b><small>{{ at(o.created_at, '%d %b, %H:%M') }} · {{ o.ship_city }}</small></span><span class="hx-orow-end">{{ status_pill(o) }}<b>{{ price(o.currency, o.total_minor)|striptags }}</b></span></a>{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-box-open"></i><span>No orders yet.</span></p>{% endif %}</section>
+<section class="hx-section"><p class="hx-eyebrow">// low on stock</p>{% if low %}<ul class="hx-low">{% for p in low %}<li><a href="/companies/{{ c.id }}/shop/products/{{ p.id }}">{{ p.title }}</a><b class="{{ 'hx-off-hours' if p.stock else 'hx-err' }}">{{ p.stock }} left</b></li>{% endfor %}</ul>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-boxes-stacked"></i><span>Everything live has more than {{ 3 }} in stock.</span></p>{% endif %}</section>
+</div>{% endif %}
+{% if manager %}<section class="hx-section" id="settings"><p class="hx-eyebrow">// settings</p>
+<form method="post" action="/companies/{{ c.id }}/shop/settings" class="hx-card hx-form">{{ csrf_input(request) }}
+<div class="hx-reg-row"><label class="visually-hidden" for="shop-status">Shop status</label><select name="status" id="shop-status" class="hx-select hx-select-lg"><option value="open"{{ ' selected' if s.status == 'open' }}>open: selling</option><option value="paused"{{ ' selected' if s.status == 'paused' }}>paused: hidden, nobody can buy</option></select>
+<label class="hx-field"><i class="fa-solid fa-quote-left"></i><span class="visually-hidden">Tagline</span><input name="tagline" value="{{ s.tagline }}" maxlength="160" placeholder="tagline on your shop front"></label></div>
+<div class="hx-reg-row"><label class="hx-field"><i class="fa-solid fa-truck"></i><span class="hx-pfx" aria-hidden="true">shipping ({{ s.currency }}):</span><span class="visually-hidden">Shipping per order</span><input name="shipping" type="number" min="0" step="0.01" value="{{ '%.2f'|format(s.shipping_minor / 100) }}"></label>
+<label class="hx-field"><i class="fa-solid fa-gift"></i><span class="hx-pfx" aria-hidden="true">free from:</span><span class="visually-hidden">Free shipping from</span><input name="free_over" type="number" min="0" step="0.01" value="{{ '%.2f'|format(s.free_over_minor / 100) if s.free_over_minor else '' }}" placeholder="optional"></label>
+<label class="hx-field"><i class="fa-solid fa-rotate-left"></i><span class="hx-pfx" aria-hidden="true">returns (days):</span><span class="visually-hidden">Return window in days</span><input name="returns_days" type="number" min="0" max="60" value="{{ s.returns_days }}"></label></div>
+<div class="hx-reg-row"><label class="hx-choice"><input type="checkbox" name="cod" value="true"{{ ' checked' if s.cod }}><i class="fa-solid fa-money-bill-wave"></i><span>offer cash on delivery</span><i class="fa-solid fa-check hx-check"></i></label>
+<label class="hx-choice"><input type="checkbox" name="ai_tasks" value="true"{{ ' checked' if s.ai_tasks }}><i class="fa-solid fa-wand-magic-sparkles"></i><span>let the AI give shop tasks to the staff below</span><i class="fa-solid fa-check hx-check"></i></label></div>
+<p class="hx-eyebrow">// shop staff: pack + ship orders, get the AI's shop tasks (the owner, co-owners and managers always can). They don't see sales, the statement or the balance: only the owner, co-owners, managers and HR do</p>
+<div class="hx-chat-pick" role="group" aria-label="Shop staff">{% for m in c.members if m.position not in ('owner', 'co_owner', 'manager') %}<label class="hx-choice"><input type="checkbox" name="staff" value="{{ m.user_id }}"{{ ' checked' if m.user_id in staff }}><i class="fa-solid fa-user"></i><span>{{ m.user.username }}</span><i class="fa-solid fa-check hx-check"></i></label>{% else %}<p class="hx-hint">// nobody below manager yet: the managers handle it</p>{% endfor %}</div>
+<button class="hx-btn hx-btn-solid hx-gap-sm" data-busy="saving…"><span>save settings</span><i class="fa-solid fa-floppy-disk"></i></button></form></section>
+<section class="hx-section" id="tracking"><p class="hx-eyebrow">// live tracking from couriers (webhook)</p>
+<div class="hx-card hx-hook"><p>Couriers and shipping aggregators can push each step to your buyers live: POST JSON to <code>/shop/track/{{ c.id }}</code> with <code>{"awb": "…", "status": "in_transit | out_for_delivery | attempted | exception | delivered", "location": "…", "note": "…"}</code>,
+the header <code>X-Deminic-Timestamp</code> (unix seconds) and <code>X-Deminic-Signature</code> = hex HMAC-SHA256 of <code>"&lt;timestamp&gt;.&lt;body&gt;"</code> with your secret. Without it, add the steps yourself on each order.</p>
+<form method="post" action="/companies/{{ c.id }}/shop/hook">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm"><i class="fa-solid fa-key"></i><span>{{ 'make a new secret (the old one stops working)' if hook_set else 'make the secret' }}</span></button></form></div></section>{% endif %}
+{% endif %}
+</div>{% endblock %}
+{% block scripts %}{% if s and money %}<script src="{{ static('chartjs-4.4.7/chart.umd.min.js') }}"></script>{% endif %}{% endblock %}

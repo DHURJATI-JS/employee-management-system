@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% from "_shop.html" import status_pill, timeline_list with context %}
+{# routers/shop.py order_page(): o (Order), items [OrderItem], events (timeline dicts, your clock), shop (Shop or None), reviewed {product ids you reviewed}, can_return, window (days),
+   code (your delivery code while it's on its way). Live: app.js refreshes the timeline from /shop/orders/<id>/track when the presence socket says {"t": "order"} #}
+{% set to = ship_to(o) %}
+{% block title %}Order {{ o.number }}{% endblock %}
+{% block content %}<div class="hx-wide" data-order="{{ o.id }}">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/shop/orders/{{ o.number }}</span><span class="hx-term-meta" data-order-status>{{ order_status[o.status] }}</span></div>
+<div class="hx-term-body"><h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>track {{ o.number }}</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// {{ o.company_name }} · ordered {{ at(o.created_at) }} · {{ price(o.currency, o.total_minor) }} · {{ 'paid online' if o.payment_method == 'online' and o.payment_status in ('paid', 'refunded', 'refund_pending') else 'cash on delivery' if o.payment_method == 'cod' else 'awaiting payment' if o.status == 'pending' else o.payment_status }}{{ ' · refunded' if o.payment_status == 'refunded' }}{{ ' · refund pending' if o.payment_status == 'refund_pending' }} · <a href="/shop/orders">all orders</a></p>
+{% if o.status == 'pending' %}<p class="hx-warn-msg"><i class="fa-solid fa-hourglass-half"></i> Not paid yet. <a href="/shop/pay/{{ o.checkout }}">pay now →</a></p>{% endif %}
+{% if code %}<div class="hx-code-box"><small>your delivery code: give it to the delivery person when it arrives</small><b data-copy="{{ code }}">{{ code[:3] }} {{ code[3:] }}</b></div>{% endif %}
+</div></section>
+<div class="hx-order-grid">
+<section class="hx-section"><p class="hx-eyebrow">// tracking · updates live</p>
+{% if o.awb or o.courier %}<div class="hx-card hx-ship-box"><i class="fa-solid fa-truck-fast"></i><div><b>{{ courier_label(o) }}</b>{% if o.awb %}<span>tracking number <code data-copy="{{ o.awb }}">{{ o.awb }}</code></span>{% endif %}{% if o.courier_phone %}<span>call: {{ o.courier_phone }}</span>{% endif %}</div>
+{% if track_link(o) %}<a class="hx-btn hx-btn-sm" href="{{ track_link(o) }}" target="_blank" rel="noopener noreferrer"><span>{{ 'track it' if o.tracking_url else 'open ' ~ courier_label(o) ~ "'s tracking" }}</span><i class="fa-solid fa-arrow-up-right-from-square"></i></a>{% endif %}</div>
+{% if o.awb and not o.tracking_url and track_link(o) %}<p class="hx-hint">// paste the tracking number on {{ courier_label(o) }}'s page (copy it with one click)</p>{% endif %}{% endif %}
+<div class="hx-card">{{ timeline_list(events) }}</div>
+{% if o.delivered_how == 'photo' and proof_exists(o.id) %}<p class="hx-eyebrow hx-gap-sm">// left with a photo as proof</p><img class="hx-proof" src="/shop/orders/{{ o.id }}/proof" alt="the photo the seller left as proof of delivery">{% endif %}
+</section>
+<section class="hx-section"><p class="hx-eyebrow">// what you ordered</p>
+<div class="hx-card hx-oitems">{% for i in items %}<div class="hx-oitem"><span class="hx-cart-img">{% if i.product_id and product_cover(i.product_id) %}<img src="{{ product_cover(i.product_id) }}" alt="" width="56" height="56" loading="lazy">{% else %}<i class="fa-solid fa-box"></i>{% endif %}</span>
+<span><b>{{ i.title }}</b><small>{{ i.qty }} × {{ price(o.currency, i.price_minor)|striptags }}{{ ' · incl. ' ~ price(o.currency, i.tax_minor)|striptags ~ ' tax' if i.tax_minor }}</small>
+{% if o.status in ('delivered', 'returned') and i.product_id %}{% if i.product_id in reviewed %}<small class="hx-ok"><i class="fa-solid fa-circle-check"></i> reviewed · <a href="/shop/p/{{ i.product_id }}#review">edit</a></small>{% else %}<a class="hx-btn hx-btn-sm hx-btn-solid" id="review" href="/shop/p/{{ i.product_id }}#review"><i class="fa-solid fa-star"></i><span>rate + review it</span></a>{% endif %}{% endif %}</span></div>{% endfor %}
+<div class="hx-cart-total"><span>items {{ price(o.currency, o.subtotal_minor)|striptags }} · shipping {{ 'free' if not o.shipping_minor else price(o.currency, o.shipping_minor)|striptags }}{{ ' · incl. ' ~ price(o.currency, o.tax_minor)|striptags ~ ' tax' if o.tax_minor }}</span><b>{{ price(o.currency, o.total_minor) }}</b></div></div>
+<p class="hx-eyebrow hx-gap-sm">// delivering to</p><p class="hx-card hx-addr">{{ to.name }}<br>{{ to.line1 }}{{ ', ' ~ to.line2 if to.line2 }}<br>{{ to.city }}{{ ', ' ~ to.state if to.state }} {{ to.postcode }} · {{ to.country }}<br>{{ to.phone }}</p>
+<div class="hx-row-actions hx-gap-sm">
+{% if o.status in ('shipped', 'out_for_delivery') %}<form method="post" action="/shop/orders/{{ o.id }}/received">{{ csrf_input(request) }}<button class="hx-btn hx-btn-solid"><i class="fa-solid fa-house-circle-check"></i><span>I received it</span></button></form>{% endif %}
+{% if o.status in ('pending', 'placed', 'packed') %}<details class="hx-inline-details"><summary class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-ban"></i><span>cancel order</span></summary>
+<form method="post" action="/shop/orders/{{ o.id }}/cancel" class="hx-form hx-gap-sm">{{ csrf_input(request) }}<label class="hx-field"><i class="fa-solid fa-comment"></i><span class="visually-hidden">Why (optional)</span><input name="reason" maxlength="300" placeholder="why (optional)"></label><button class="hx-btn hx-btn-sm hx-btn-danger"><span>cancel it</span></button></form></details>{% endif %}
+{% if can_return %}<details class="hx-inline-details"><summary class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-rotate-left"></i><span>return it ({{ window }}-day window)</span></summary>
+<form method="post" action="/shop/orders/{{ o.id }}/return" class="hx-form hx-gap-sm">{{ csrf_input(request) }}<label class="hx-field hx-area"><i class="fa-solid fa-comment"></i><span class="visually-hidden">Why</span><textarea name="reason" rows="2" minlength="5" maxlength="500" required placeholder="what's wrong with it"></textarea></label><button class="hx-btn hx-btn-sm"><span>ask for a return</span></button></form></details>{% endif %}
+{% if o.return_declined_at %}<p class="hx-hint"><i class="fa-solid fa-circle-xmark"></i> {{ o.company_name }} declined your return {{ at(o.return_declined_at) }}: its reason is in the journey</p>
+{% elif o.return_requested_at and not o.returned_at %}<p class="hx-hint"><i class="fa-solid fa-rotate-left"></i> return requested {{ at(o.return_requested_at) }}: waiting for {{ o.company_name }}</p>{% endif %}
+</div></section>
+</div></div>{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{# routers/payroll.py payslip(): p = the payout, lines = its payslip [(label, value)]; printable (app.css @media print keeps only the slip) #}
+{% block title %}Payslip {{ '%06d'|format(p.id) }}{% endblock %}
+{% block content %}<section class="hx-term hx-payslip">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/payslips/{{ '%06d'|format(p.id) }}</span><span class="hx-term-meta"><i class="fa-solid fa-receipt"></i> {{ p.company_name }}</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><i class="fa-solid fa-file-invoice-dollar"></i> Payslip · {{ p.company_name }}</h1>
+<p class="hx-sub">// {{ app_name }} · salary for cycle {{ p.cycle }} ({{ p.period_start.strftime('%d %b %Y') }} – {{ p.period_end.strftime('%d %b %Y') }})</p>
+<dl class="hx-slip hx-slip-lg">{% for k, v in lines %}<dt>{{ k }}</dt><dd{% if k == 'Net paid' %} class="hx-slip-net"{% endif %}>{{ v }}</dd>{% endfor %}
+{% if user.tz and user.tz != p.timezone %}<dt>Transferred, your time</dt><dd>{{ at(p.transferred_at) }}</dd>{% endif %}</dl>
+<div class="hx-slip-sum"><span>gross {{ money(p.currency, p.gross) }}</span><span>− {{ tax_label(p.salary_currency or p.currency) }} {{ money(p.currency, p.tds) }}</span><b>= {{ money(p.currency, p.net) }} credited</b></div>
+<figure class="hx-proof hx-gap"><img src="/payouts/{{ p.id }}/proof" alt="Transfer screenshot for payment {{ '%06d'|format(p.id) }}" decoding="async"><figcaption>// receipt: the transfer screenshot</figcaption></figure>
+<div class="hx-row-actions hx-gap-sm hx-no-print"><button type="button" class="hx-btn" data-print><i class="fa-solid fa-print"></i><span>print / save as PDF</span></button>
+<a href="{{ '/statements#pay-' ~ p.id if p.user_id == user.user_id|int else '/companies/' ~ p.company_id ~ '/dashboard#pay-' ~ p.id }}" class="hx-btn hx-btn-ghost"><i class="fa-solid fa-arrow-left"></i><span>back to the statement</span></a></div>
+</div>
+</section>{% endblock %}

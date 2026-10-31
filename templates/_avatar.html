@@ -1,0 +1,5 @@
+{# picture-or-fallback macros: {% from "_avatar.html" import avatar, logo %}
+   avatar(user_id, name, cls): their profile picture, else their initials. logo(company, icon, cls): the company logo, else a Font Awesome icon.
+   cls adds size classes (hx-avatar-sm / -lg / -xl, hx-logo-lg). Pictures are /media/ files, re-encoded by media.py #}
+{% macro avatar(user_id, name, cls='') %}{% set url = picture('u', user_id) %}{% if url %}<img class="hx-avatar hx-avatar-img {{ cls }}" src="{{ url }}" alt="" width="64" height="64" loading="lazy" decoding="async">{% else %}<span class="hx-avatar {{ cls }}" aria-hidden="true">{{ initials(name) }}</span>{% endif %}{% endmacro %}
+{% macro logo(company, icon='fa-building', cls='') %}{% set url = picture('c', company.id) %}{% if url %}<img class="hx-icon hx-logo {{ cls }}" src="{{ url }}" alt="" width="64" height="64" loading="lazy" decoding="async">{% else %}<span class="hx-icon {{ cls }}"><i class="fa-solid {{ icon }}"></i></span>{% endif %}{% endmacro %}

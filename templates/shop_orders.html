@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% from "_shop.html" import status_pill with context %}
+{# routers/shop.py my_orders(): orders (yours, newest first), items {order id: [OrderItem]} #}
+{% block title %}My orders{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/shop/orders</span><span class="hx-term-meta"><i class="fa-solid fa-box"></i> {{ orders|length }}</span></div>
+<div class="hx-term-body"><h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>orders --mine</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// everything you've ordered, with live tracking · <a href="/shop">shop</a> · <a href="/shop/cart">cart</a></p></div>
+</section>
+<section class="hx-section">{% if orders %}<div class="hx-olist">{% for o in orders %}<a class="hx-card hx-orow" href="/shop/orders/{{ o.id }}">
+<span class="hx-orow-img">{% set first = items.get(o.id, [])[0] if items.get(o.id) else None %}{% if first and first.product_id and product_cover(first.product_id) %}<img src="{{ product_cover(first.product_id) }}" alt="" width="56" height="56" loading="lazy">{% else %}<i class="fa-solid fa-box"></i>{% endif %}</span>
+<span class="hx-orow-info"><b>{{ items.get(o.id, [])|map(attribute='title')|join(', ')|truncate(80) }}</b><small>{{ o.number }} · {{ o.company_name }} · {{ at(o.created_at, '%d %b %Y') }}</small></span>
+<span class="hx-orow-end">{{ status_pill(o) }}<b>{{ price(o.currency, o.total_minor) }}</b></span></a>{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-box-open"></i><span>No orders yet. <a href="/shop">Find something →</a></span></p>{% endif %}</section>
+</div>{% endblock %}

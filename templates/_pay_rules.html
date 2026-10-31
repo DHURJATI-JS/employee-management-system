@@ -1,0 +1,11 @@
+{# payout rules for a salary currency (payrules.RULES): AI-written, can be wrong, and says so. rules_box(cur) shows one; rules_switch() shows the one picked
+   in the company form's currency select (app.js [data-rules] toggles them) #}
+{% macro rules_block(cur) %}{% set r = pay_rules[cur] %}
+<p class="hx-rules-ai" role="note"><i class="fa-solid fa-robot"></i> <b>{{ ai_warning }}</b></p>
+<ul class="hx-rules-list">{% for p in r.points %}<li>{{ p }}</li>{% endfor %}</ul>
+<p class="hx-hint">// official source: <a href="{{ r.source[1] }}" target="_blank" rel="noopener noreferrer">{{ r.source[0] }}</a> · the second amount on a payout is called “{{ r.tax }}” here</p>
+{% endmacro %}
+{% macro rules_box(cur) %}{% if cur in pay_rules %}<details class="hx-rules"><summary><i class="fa-solid fa-scale-balanced"></i> payout rules for {{ cur }} ({{ pay_rules[cur].country }}) <small>· AI-made, can contain mistakes</small></summary>
+{{ rules_block(cur) }}</details>{% endif %}{% endmacro %}
+{% macro rules_switch(selected) %}<div class="hx-rules hx-rules-open" data-rules>{% for cur in pay_rules %}<div data-rules-for="{{ cur }}"{% if cur != selected %} hidden{% endif %}>
+<p class="hx-rules-title"><i class="fa-solid fa-scale-balanced"></i> paying salaries in {{ cur }}: the rules in {{ pay_rules[cur].country }}</p>{{ rules_block(cur) }}</div>{% endfor %}</div>{% endmacro %}

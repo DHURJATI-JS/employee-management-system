@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Join company{% endblock %}
+{% block content %}<section class="hx-term hx-auth">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/companies/join.sh</span><span class="hx-term-meta"><i class="fa-solid fa-shield-halved"></i> csrf on</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>./join-company</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<div class="hx-boot" aria-hidden="true">
+<p><span class="hx-ok">[  ok  ]</span> codes are random uuid4s (122 bits)</p>
+<p><span class="hx-ok">[  ok  ]</span> everyone starts as rookie</p>
+<p><span class="hx-wait">[ wait ]</span> awaiting company code<span class="hx-cursor">_</span></p>
+</div>
+<form method="post" class="hx-form">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Company code</span><span class="hx-pfx" aria-hidden="true">code:</span><input name="code" placeholder="xxxxxxxx-xxxx-4xxx-xxxx-xxxxxxxxxxxx" maxlength="64" spellcheck="false" autocomplete="off" required autofocus></label>
+<p class="hx-hint">// ask the company's owner, manager or HR for its code</p>
+<button class="hx-btn" data-busy="looking up…"><span>find company</span><i class="fa-solid fa-arrow-right"></i></button>
+</form>
+{% if not single_company() %}<p class="hx-alt">starting your own? <a href="/companies/new">./create</a></p>{% endif %}
+</div>
+</section>{% endblock %}

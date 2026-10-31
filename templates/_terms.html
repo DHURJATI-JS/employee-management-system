@@ -1,0 +1,10 @@
+{# a company's terms and conditions: its own (company.terms, versioned) + tables.STANDARD_TERMS (what joining any company here means). Shown on the
+   join page (accepted before joining) and on the company dashboard (#terms: accept a new version). Text only: escaped, newlines kept by CSS #}
+{% macro terms_box(company, standard) %}<div class="hx-terms" tabindex="0" role="region" aria-label="{{ company.name }}'s terms and conditions">
+<p class="hx-eyebrow">// {{ company.name }}'s own terms · version {{ company.terms_version }}{% if company.terms_updated_at %}, updated {{ company.terms_updated_at|tenure }} ago{% endif %}</p>
+{% if company.terms %}<div class="hx-terms-own">{{ company.terms }}</div>{% else %}<p class="hx-hint">// {{ company.name }} hasn't written its own terms: the standard ones below apply</p>{% endif %}
+<p class="hx-eyebrow hx-gap-sm">// standard terms: every company on {{ app_name }}</p>
+<ul class="hx-terms-std">{% for icon, title, text in standard %}<li><i class="fa-solid {{ icon }}" aria-hidden="true"></i><span><b>{{ title }}.</b> {{ text }}</span></li>{% endfor %}</ul>
+</div>{% endmacro %}
+{% macro accept_box(company) %}<input type="hidden" name="terms_version" value="{{ company.terms_version }}">
+<label class="hx-choice hx-toggle hx-accept"><input type="checkbox" name="accept_terms" value="true" required><i class="fa-solid fa-file-signature"></i><span>I have read and accept {{ company.name }}'s terms and conditions (version {{ company.terms_version }}) and the standard terms above</span><i class="fa-solid fa-check hx-check"></i></label>{% endmacro %}

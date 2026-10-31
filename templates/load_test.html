@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{# routers/loadtest.py: the last load test: what happened, every metric, and the machine it ran on. rep = reports/load_test.json, plots = the SVG charts' geometry (no script: hover uses <title>). #}
+{% block title %}Load test results{% endblock %}
+{% block content %}
+{% macro svg(c, label) %}<svg class="hx-plot" viewBox="0 0 {{ c.w }} {{ c.h }}" role="img" aria-label="{{ label }}">
+{% for g in c.grid %}<line class="hx-plot-grid" x1="{{ c.left }}" x2="{{ c.right }}" y1="{{ g.y }}" y2="{{ g.y }}"></line><text class="hx-plot-tick" x="{{ c.left - 6 }}" y="{{ g.y + 3 }}" text-anchor="end">{{ g.text }}</text>{% endfor %}
+{% for s in c.stages %}<line class="hx-plot-stage" x1="{{ s.x }}" x2="{{ s.x }}" y1="{{ c.top }}" y2="{{ c.bottom }}"></line><text class="hx-plot-band" x="{{ s.mid }}" y="{{ c.top - 8 }}" text-anchor="middle">{{ s.text }}</text>{% endfor %}
+{% for l in c.lines %}<path class="hx-plot-line {{ l.cls }}" d="{{ l.d }}"></path>{% endfor %}
+{% for p in c.points %}<circle class="hx-plot-dot {{ p.cls }}" cx="{{ p.x }}" cy="{{ p.y }}" r="4"><title>{{ p.tip }}</title></circle>{% if p.text %}<text class="hx-plot-value" x="{{ p.x }}" y="{{ p.y - 10 }}" text-anchor="middle">{{ p.text }}</text>{% endif %}{% endfor %}
+{% for x in c.xlabels %}<text class="hx-plot-tick" x="{{ x.x }}" y="{{ c.bottom + 16 }}" text-anchor="middle">{{ x.text }}</text>{% endfor %}
+{% for h in c.hits %}<rect class="hx-plot-hit" x="{{ h.x }}" y="{{ c.top }}" width="{{ h.w }}" height="{{ c.tall }}"><title>{{ h.tip }}</title></rect>{% endfor %}
+</svg>{% if c.legend %}<ul class="hx-plot-key">{% for l in c.lines %}<li><i class="{{ l.cls }}"></i>{{ l.name }}</li>{% endfor %}</ul>{% endif %}{% endmacro %}
+{% set h, soak, a, g = rep.headline, rep.soak, rep.ai, rep.grown %}
+<div class="hx-wide hx-load">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/load-test.report</span><span class="hx-term-meta"><i class="fa-solid fa-gauge-high"></i> {{ when }}</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>locust --report</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// {{ h.length }} of simulated people using {{ app_name }} at once, with the AI answering at the same time, on the one computer listed below</p>
+{% if rep.interim %}<p class="hx-hint"><i class="fa-solid fa-hourglass-half"></i> Still running: this is the climb so far. The hour held at a steady load is under way, and this page fills in when it ends.</p>{% endif %}
+<ul class="hx-load-checks hx-load-said">
+{% if h.good_users %}<li class="hx-load-ok"><i class="fa-solid fa-circle-check"></i><div><b>Comfortable up to {{ h.good_users }} people at once</b><span>On one worker process, 95% of requests stayed under {{ '%g'|format(rep.setup.good_p95_ms / 1000) }} second and fewer than {{ '%g'|format(rep.setup.good_fail_pct) }}% failed.</span></div></li>{% endif %}
+{% if h.bad_users %}<li class="hx-load-bad"><i class="fa-solid fa-triangle-exclamation"></i><div><b>It started to struggle at {{ h.bad_users }} people</b><span>{% for s in rep.stages if s.users == h.bad_users and s.kind == 'step' %}95% of requests took up to {{ ms(s.p95) }} and {{ s.fail_pct }}% failed{% endfor %}. {% if rep.mvp %}That's measured with the whole crowd in place, after the arrivals.{% elif rep.stress %}That's measured while people were still arriving at 5 a second, which is harder than a steady crowd of that size.{% else %}That's the limit of this set-up, shown in the table below.{% endif %}</span></div></li>{% else %}<li class="hx-load-ok"><i class="fa-solid fa-circle-check"></i><div><b>No breaking point found</b><span>It stayed within those limits at every step, up to {{ h.peak_users }} people.</span></div></li>{% endif %}
+{% if soak %}<li class="hx-load-ok"><i class="fa-solid fa-hourglass-half"></i><div><b>{{ soak.minutes|round|int }} minutes at a steady {{ rep.stages[-2].users }} people, after that peak</b><span>{% if soak.recovered_after_min is not none %}It was back to normal {{ soak.recovered_after_min|round|int }} minute{{ '' if soak.recovered_after_min|round|int == 1 else 's' }} after the crowd left. {% endif %}p95 went from {{ ms(soak.first.p95) }} to {{ ms(soak.last.p95) }}, and the server's memory from {{ soak.first.app_mb|round|int }} MB to {{ soak.last.app_mb|round|int }} MB.</span></div></li>{% endif %}
+{% if rep.stress %}<li class="hx-load-bad"><i class="fa-solid fa-gauge-high"></i><div><b>It tops out at about {{ h.peak_rps|round|int }} requests a second</b><span>That's one worker process at full stretch. Past that, more people don't get more done: everyone waits longer, and a request that has waited 30 seconds counts as failed.</span></div></li>
+{% if rep.recovery %}{% set back = rep.recovery %}<li class="{{ 'hx-load-ok' if back.fine else 'hx-load-bad' }}"><i class="fa-solid {{ 'fa-circle-check' if back.fine else 'fa-triangle-exclamation' }}"></i><div><b>{{ 'It recovered by itself' if back.fine else "It hadn't recovered" }} once the crowd was down to {{ back.users }}</b><span>With no restart. Over the {{ back.requests }} requests after that point, half took under {{ ms(back.p50) }}, 95% under {{ ms(back.p95) }}, and {{ back.fail_pct }}% failed.</span></div></li>{% endif %}{% endif %}
+</ul>
+</div>
+</section>
+{# ---------- MVP ready or not: the user's bar, decided before the test ran (load_report.py) ---------- #}
+{% if rep.mvp %}<section class="hx-section" id="mvp">
+<p class="hx-eyebrow">// is it MVP ready?</p>
+<p class="hx-load-verdict{{ ' hx-load-bad' if not rep.mvp.ready }}">{% if rep.mvp.accepted %}MVP ready: the owner's call{% elif rep.mvp.ready %}Yes: MVP ready{% else %}Not MVP ready yet{% endif %}</p>
+<p class="hx-hint">// the bar, set before this test ran: fine at {{ rep.mvp.bar_users }} people at once ({{ '%g'|format(rep.setup.good_p95_ms / 1000) }} second for 95% of requests, under {{ '%g'|format(rep.setup.good_fail_pct) }}% failed), no crash, every data check passed, and it recovered by itself. {% if rep.mvp.accepted %}{{ rep.mvp.accepted }}{% else %}All four must pass{% endif %}</p>
+<ul class="hx-load-checks">{% for c in rep.mvp.checks %}<li class="{{ 'hx-load-ok' if c.ok else 'hx-load-bad' }}"><i class="fa-solid {{ 'fa-circle-check' if c.ok else 'fa-circle-xmark' }}"></i><div><b>{{ c.check }}</b><span>{{ c.detail }}</span></div></li>{% endfor %}</ul>
+<p class="hx-hint hx-gap-sm">// this answers how it held up under load and whether the data stayed right. It isn't a security audit, and real-money payments weren't part of it</p>
+</section>{% endif %}
+{# ---------- the flood this test ran on (flood.py, counted in the database afterwards) ---------- #}
+{% if rep.flood %}{% set f = rep.flood %}<section class="hx-section" id="flood">
+<p class="hx-eyebrow">// the flood: the data behind this test</p>
+<p class="hx-hint">// before the test, the real database was flooded with random data in one go ({{ f.took_s }} seconds, to {{ f.database_mb }} MB). Everything added is named test_…{% if f.unchanged %}, and a fingerprint of the rows already there was identical before and after, so none of them changed{% endif %}. The test then ran on a copy of the flooded database</p>
+<div class="hx-kpis">{% for k, v in f.added %}<div class="hx-kpi"><small>{{ k }}</small><b>{{ '{:,}'.format(v) }}</b></div>{% endfor %}</div>
+<div class="hx-table-wrap hx-gap"><table class="hx-load-table"><caption>The real database, before and after the flood.</caption><thead><tr><th scope="col">what</th><th scope="col">before</th><th scope="col">after</th></tr></thead>
+<tbody>{% for k, a, b in f.growth %}<tr><th scope="row">{{ k }}</th><td>{{ '{:,}'.format(a) }}</td><td>{{ '{:,}'.format(b) }}</td></tr>{% endfor %}</tbody></table></div>
+</section>{% endif %}
+{# ---------- headline numbers ---------- #}
+<section class="hx-section">
+<p class="hx-eyebrow">// the numbers</p>
+<div class="hx-kpis">
+<div class="hx-kpi"><small>requests served</small><b>{{ '{:,}'.format(h.requests) }}</b></div>
+<div class="hx-kpi"><small>answered without failing</small><b>{{ h.ok_pct }}%</b></div>
+<div class="hx-kpi"><small>most people at once</small><b>{{ h.peak_users }}</b></div>
+<div class="hx-kpi"><small>best requests a second</small><b>{{ h.peak_rps }}</b></div>
+<div class="hx-kpi"><small>typical response (p50)</small><b>{{ ms(h.p50) }}</b></div>
+<div class="hx-kpi"><small>95% faster than (p95)</small><b>{{ ms(h.p95) }}</b></div>
+<div class="hx-kpi"><small>99% faster than (p99)</small><b>{{ ms(h.p99) }}</b></div>
+<div class="hx-kpi"><small>test length</small><b>{{ h.length }}</b></div>
+<div class="hx-kpi"><small>live sockets held at once</small><b>{{ h.sockets }}</b></div>
+<div class="hx-kpi"><small>messages pushed to them</small><b>{{ '{:,}'.format(h.pushed) }}</b></div>
+<div class="hx-kpi"><small>shop orders placed</small><b>{{ '{:,}'.format(h.orders) }}</b></div>
+<div class="hx-kpi"><small>AI answers written</small><b>{{ h.ai_answers }}</b></div>
+</div>
+</section>
+{# ---------- as the crowd grew ---------- #}
+<section class="hx-section">
+<p class="hx-eyebrow">// as the crowd grew</p>
+<div class="hx-charts">
+<figure class="hx-card hx-chart"><figcaption>response time <small>by people online, log scale</small></figcaption>{{ svg(plots.latency_people, "Response time by the number of people online") }}</figure>
+<figure class="hx-card hx-chart"><figcaption>requests a second <small>by people online</small></figcaption>{{ svg(plots.rps_people, "Requests a second by the number of people online") }}</figure>
+</div>
+<div class="hx-table-wrap hx-gap"><table class="hx-load-table">
+<caption>Each stage on its own, leaving out the start of it, while people are still arriving.</caption>
+<thead><tr><th scope="col">stage</th><th scope="col">people</th><th scope="col">minutes</th><th scope="col">requests</th><th scope="col">a second</th><th scope="col">p50</th><th scope="col">p95</th><th scope="col">p99</th><th scope="col">slowest</th><th scope="col">failed</th><th scope="col">machine CPU</th><th scope="col">app CPU</th><th scope="col">sockets</th><th scope="col">state</th></tr></thead>
+<tbody>{% for s in rep.stages %}<tr><th scope="row">{{ 'held steady' if s.kind == 'soak' else ('crowd leaving' if rep.stress else 'quiet again') if s.kind == 'cool' else 'step ' ~ loop.index }}</th><td>{{ s.users }}</td><td>{{ '%g'|format(s.minutes) }}</td><td>{{ '{:,}'.format(s.requests) }}</td><td>{{ s.rps }}</td><td>{{ ms(s.p50) }}</td><td>{{ ms(s.p95) }}</td><td>{{ ms(s.p99) }}</td><td>{{ ms(s.max) }}</td><td>{{ s.fail_pct }}%</td><td>{{ s.cpu|round|int }}%</td><td>{{ s.app_cpu|round|int }}%</td><td>{{ s.sockets }}</td><td>{% if rep.stress and s.kind == 'cool' %}leaving{% elif s.fine %}<span class="hx-load-ok"><i class="fa-solid fa-circle-check"></i> fine</span>{% else %}<span class="hx-load-bad"><i class="fa-solid fa-triangle-exclamation"></i> struggling</span>{% endif %}</td></tr>{% endfor %}</tbody>
+</table></div>
+</section>
+{# ---------- minute by minute ---------- #}
+<section class="hx-section">
+<p class="hx-eyebrow">// minute by minute</p>
+<p class="hx-hint">The numbers along the top of each chart are the people online in that stage. Hover over a chart for the exact minute.</p>
+<div class="hx-charts">
+<figure class="hx-card hx-chart"><figcaption>requests a second</figcaption>{{ svg(plots.rps, "Requests a second over the whole test") }}</figure>
+<figure class="hx-card hx-chart"><figcaption>response time <small>log scale</small></figcaption>{{ svg(plots.latency, "Response time over the whole test") }}</figure>
+<figure class="hx-card hx-chart"><figcaption>CPU of the whole machine{% if not rep.notes %} <small>the AI uses most of it</small>{% endif %}</figcaption>{{ svg(plots.cpu, "CPU use of the whole machine over the whole test") }}</figure>
+<figure class="hx-card hx-chart"><figcaption>CPU of the app server <small>100% = one full core, the most one worker's main thread can use</small></figcaption>{{ svg(plots.app_cpu, "CPU use of the app server over the whole test") }}</figure>
+<figure class="hx-card hx-chart"><figcaption>memory of the app server{% if soak %} <small>a leak would be a line climbing all the way</small>{% endif %}</figcaption>{{ svg(plots.memory, "Memory of the app server over the whole test") }}</figure>
+{% if rep.total.failures %}<figure class="hx-card hx-chart"><figcaption>failed requests a minute</figcaption>{{ svg(plots.fails, "Failed requests a minute over the whole test") }}</figure>{% endif %}
+</div>
+</section>
+{# ---------- the AI ---------- #}
+<section class="hx-section">
+<p class="hx-eyebrow">// the AI, running through all of it</p>
+<div class="hx-kpis">
+<div class="hx-kpi"><small>answers written</small><b>{{ a.answers }}</b></div>
+<div class="hx-kpi"><small>typical full answer</small><b>{{ a.median_s }} s</b></div>
+<div class="hx-kpi"><small>95% within</small><b>{{ a.p95_s }} s</b></div>
+<div class="hx-kpi"><small>longest wait</small><b>{{ a.max_s }} s</b></div>
+<div class="hx-kpi"><small>answers an hour</small><b>{{ a.answers_per_hour }}</b></div>
+<div class="hx-kpi"><small>answers that failed</small><b>{{ a.failed }}</b></div>
+<div class="hx-kpi"><small>told "busy, try again"</small><b>{{ a.turned_away }}</b></div>
+<div class="hx-kpi"><small>"who's best" verdicts</small><b>{{ a.verdicts }}</b></div>
+<div class="hx-kpi"><small>typical verdict</small><b>{{ a.verdict_median_s }} s</b></div>
+</div>
+<p class="hx-hint">{% if rep.notes %}{{ rep.notes.ai }}{% else %}Every answer ran on this computer's CPU, one at a time, while the website kept serving everyone else. A full answer is timed from the question to its last word, including its wait in the queue. When too many people were waiting the app said it was busy, which is the limit working: those are not failures. The instant "who's best" ranking and the AI's task picks don't use the model, so they appear with the pages below.{% endif %}</p>
+</section>
+{# ---------- every page and action ---------- #}
+<section class="hx-section">
+<p class="hx-eyebrow">// every page and action, slowest first</p>
+<div class="hx-table-wrap"><table class="hx-load-table hx-load-long">
+<caption>Over the whole test, including the moments it was overloaded.</caption>
+<thead><tr><th scope="col">what</th><th scope="col">requests</th><th scope="col">failed</th><th scope="col">average</th><th scope="col">p50</th><th scope="col">p90</th><th scope="col">p95</th><th scope="col">p99</th><th scope="col">slowest</th></tr></thead>
+<tbody>{% for e in rep.endpoints %}<tr><th scope="row"><span class="hx-load-kind">{{ e.kind }}</span> {{ e.label }}</th><td>{{ '{:,}'.format(e.requests) }}</td><td>{{ e.failures }}</td><td>{{ ms(e.mean) }}</td><td>{{ ms(e.p50) }}</td><td>{{ ms(e.p90) }}</td><td>{{ ms(e.p95) }}</td><td>{{ ms(e.p99) }}</td><td>{{ ms(e.max) }}</td></tr>{% endfor %}</tbody>
+</table></div>
+</section>
+{# ---------- what failed ---------- #}
+<section class="hx-section">
+<p class="hx-eyebrow">// what failed</p>
+{% if rep.failures %}<div class="hx-table-wrap"><table class="hx-load-table hx-load-long">
+<thead><tr><th scope="col">what</th><th scope="col">why</th><th scope="col">times</th></tr></thead>
+<tbody>{% for f in rep.failures %}<tr><th scope="row">{{ f.what }}</th><td class="hx-load-text">{{ f.error }}</td><td>{{ '{:,}'.format(f.count) }}</td></tr>{% endfor %}</tbody>
+</table></div>{% else %}<p class="hx-empty"><i class="fa-solid fa-circle-check"></i> Nothing failed.</p>{% endif %}
+</section>
+{# ---------- data stayed right ---------- #}
+{% if rep.integrity %}<section class="hx-section">
+<p class="hx-eyebrow">// was the data still right afterwards?</p>
+<ul class="hx-load-checks">{% for c in rep.integrity %}<li class="{{ 'hx-load-ok' if c.ok else 'hx-load-bad' }}"><i class="fa-solid {{ 'fa-circle-check' if c.ok else 'fa-circle-xmark' }}"></i><div><b>{{ c.check }}</b><span>{{ c.detail }}</span></div></li>{% endfor %}</ul>
+</section>{% endif %}
+{# ---------- what the testing turned up ---------- #}
+{% if rep.after %}<section class="hx-section">
+<p class="hx-eyebrow">// what this test found, fixed after it ran</p>
+<ul class="hx-load-checks">{% for f in rep.after %}<li class="hx-load-ok"><i class="fa-solid fa-screwdriver-wrench"></i><div><b>{{ f.what }}</b><span>{{ f.fix }} The numbers on this page are from before that fix.</span></div></li>{% endfor %}</ul>
+</section>{% endif %}
+{% if rep.fixed %}<section class="hx-section">
+<p class="hx-eyebrow">// what the testing found, all fixed before this run</p>
+<ul class="hx-load-checks">{% for f in rep.fixed %}<li class="hx-load-ok"><i class="fa-solid fa-screwdriver-wrench"></i><div><b>{{ f.what }}</b><span>{{ f.fix }}</span></div></li>{% endfor %}</ul>
+</section>{% endif %}
+{# ---------- the machine ---------- #}
+<section class="hx-section" id="system">
+<p class="hx-eyebrow">// the system it was tested on</p>
+<div class="row g-4">{% for s in rep.system %}<div class="col-lg-4"><article class="hx-card"><span class="hx-icon"><i class="fa-solid {{ {'Computer': 'fa-desktop', 'Software': 'fa-layer-group', 'The AI': 'fa-robot'}[s.group] }}"></i></span><h2>{{ s.group }}</h2>
+<table class="hx-table">{% for x in s.rows %}<tr><td>{{ x.k }}</td><td>{{ x.v }}</td></tr>{% endfor %}</table></article></div>{% endfor %}</div>
+</section>
+{# ---------- how it was run ---------- #}
+<section class="hx-section">
+<p class="hx-eyebrow">// how it was run</p>
+<div class="row g-4">
+<div class="col-lg-6"><article class="hx-card"><span class="hx-icon"><i class="fa-solid fa-users"></i></span><h2>Who was simulated</h2>
+<ul class="hx-points"><li><b>Visitors</b>, not logged in: the home page, company search, the shop and its product pages.</li>
+<li><b>Employees:</b> dashboards, tasks and marking them done, the calendar, the bell, statements, chats and sending messages, each with a live socket open.</li>
+<li><b>Owners:</b> company dashboards with the AI panel, the instant "who's best" ranking, and giving tasks with the AI picking up to 5 people.</li>
+<li><b>Shoppers:</b> the whole way from a product to a paid order, some fighting over 5 products with only 30 in stock, and some cancelling.</li>
+<li><b>6 people asking the AI questions</b> throughout, and 1 owner asking it who's best for a task. The AI promoter was switched on for 5 companies.</li>
+<li>Each person waits 1 to 6 seconds between clicks, so 100 people make about 35 requests a second, not 100.</li>
+<li>{% if rep.stress %}A stress test: new people arrived at up to 5 a second and each one logged in: {% for s in rep.stages if s.kind == 'step' %}{{ s.users }} for {{ '%g'|format(s.minutes) }} minutes{{ ', then ' if not loop.last }}{% endfor %}. Then the crowd dropped to {{ rep.stages[-1].users }} to see the site recover.{% else %}The crowd grew in steps of {{ rep.stages[0].minutes|round|int }} minutes: {% for s in rep.stages if s.kind == 'step' %}{{ s.users }}{{ ', ' if not loop.last }}{% endfor %} people.{% if soak %} Then {{ rep.stages[-2].minutes|round|int }} minutes held at {{ rep.stages[-2].users }} to catch leaks and slow decay, and {{ rep.stages[-1].minutes|round|int }} quiet minutes at {{ rep.stages[-1].users }}.{% endif %}{% endif %}</li></ul></article></div>
+<div class="col-lg-6"><article class="hx-card"><span class="hx-icon"><i class="fa-solid fa-database"></i></span><h2>The data it ran on</h2>
+<table class="hx-table">{% for k, v in rep.dataset.items() %}<tr><td>{{ k }}</td><td>{{ '{:,}'.format(v) }}</td></tr>{% endfor %}
+{% if g %}<tr><td>chat messages sent during the test</td><td>{{ '{:,}'.format(g.chats) }}</td></tr><tr><td>tasks given during the test</td><td>{{ '{:,}'.format(g.tasks) }}</td></tr><tr><td>orders placed during the test</td><td>{{ '{:,}'.format(g.orders) }}</td></tr><tr><td>database size, start to end</td><td>{{ g.database_mb_start|round|int }} MB to {{ g.database_mb_end|round|int }} MB</td></tr><tr><td>database connections, most at once</td><td>{{ g.connections_peak }}</td></tr>{% endif %}</table></article></div>
+</div>
+<p class="hx-hint hx-gap">{% if rep.notes %}{{ rep.notes.data }}{% else %}All of it random, in a separate database: no real account, company or message was touched.{% endif %}</p>
+</section>
+{# ---------- honest limits ---------- #}
+<section class="hx-section">
+<p class="hx-eyebrow">// how to read this</p>
+<ul class="hx-points">
+<li><b>Everything shared one computer.</b> {% if rep.notes %}{{ rep.notes.shared }}{% else %}The app, the database, the AI and Locust itself all ran on the machine above, so the AI's heavy CPU use was competing with the website the whole time. A separate AI or database server would do better.{% endif %}</li>
+<li><b>One worker process, no network.</b> Requests travelled inside the machine, so real people on real connections would add their own delay.</li>
+<li><b>Your limits were on.</b> The rate limiter, spam limits and every other limit ran as they do normally. Each simulated person came from their own local address.</li>
+<li><b>Pages, not whole browsers.</b> Locust fetches the page itself, not its pictures, CSS or scripts, which browsers mostly keep in their cache.</li>
+<li><b>Not included:</b> video calls and their captions, file uploads, and real emails, SMS or payments (those were printed or pretend, so nothing left the machine).</li>
+{% if rep.stress %}<li><b>A short test shows overload, not slow decay.</b> A slow memory leak needs hours to show up, so this test can't rule one out.</li>{% endif %}
+<li><b>Percentiles:</b> p95 means 95 of every 100 requests were faster than that number.</li>
+</ul>
+</section>
+<div class="hx-actions hx-load-end"><a href="/" class="hx-btn"><i class="fa-solid fa-arrow-left"></i><span>back to the home page</span></a></div>
+</div>{% endblock %}

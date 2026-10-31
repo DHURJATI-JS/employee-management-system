@@ -1,0 +1,21 @@
+# Git decides what's text, and these keep the line endings they need on any computer
+* text=auto
+
+# Windows runs these
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Linux containers run these
+vllm_service/** text eol=lf
+whisper_service/** text eol=lf
+
+# Never touched
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary

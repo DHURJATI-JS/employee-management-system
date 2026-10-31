@@ -1,0 +1,131 @@
+{% extends "base.html" %}{% from "_avatar.html" import avatar, logo %}
+{% macro chat_button(c, m) %}<form method="post" action="/chats/direct" class="hx-inline-chat" data-no-reopen>{{ csrf_input(request) }}<input type="hidden" name="company_id" value="{{ c.id }}"><input type="hidden" name="user_id" value="{{ m.user_id }}"><button class="hx-icon-btn" aria-label="Chat with {{ m.user.username }}" title="Chat with {{ m.user.username }}"><i class="fa-solid fa-comment"></i></button></form>{% endmacro %}
+{# routers/companies.py workplaces(): cards = [{company, me, members (sorted), is_owner, can_invite, assignable, manageable, can_edit, held, problems}],
+   positions, staff, join_as. One small card per company (live search / filter / sort: app.js [data-wp-filter]); "view" opens that company's
+   dialog (MDB modal #c-<id>, also opened by /workplaces#c-<id>, where every action redirects back to); its edit dialog is #edit-<id>. #}
+{% block title %}Workplaces{% endblock %}
+{% block content %}{% set solo = single_company() and cards|length == 1 %}{# single company mode: nothing to search or sort, the one company fills the screen #}<div class="{{ 'hx-solo-page' if solo else 'hx-wide' }} hx-workplaces">
+{% if not solo %}<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/workplaces</span><span class="hx-term-meta"><i class="fa-solid fa-briefcase"></i> {{ cards|length }} compan{{ 'y' if cards|length == 1 else 'ies' }}</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>ls -la ~/workplaces</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// every company you're in. Search, filter and sort, then view one for its members and settings</p>
+<form class="hx-wp-tools" data-wp-filter role="search" action="/workplaces">
+<label class="hx-field"><i class="fa-solid fa-magnifying-glass"></i><span class="visually-hidden">Search your companies</span><input name="q" value="{{ request.query_params.get('q', '') }}" placeholder="search name, description or your position" maxlength="64" autocomplete="off" spellcheck="false"></label>
+<label class="visually-hidden" for="wp-show">Show</label>
+<select name="show" id="wp-show" class="hx-select hx-select-lg"><option value="all">all companies</option><option value="owner">I own</option><option value="co_owner">I co-own</option><option value="staff">I work at</option><option value="listed">listed</option><option value="private">invite only</option><option value="strict">works only here</option></select>
+<label class="visually-hidden" for="wp-sort">Sort by</label>
+<select name="sort" id="wp-sort" class="hx-select hx-select-lg"><option value="joined_desc">newest joined</option><option value="joined_asc">oldest joined</option><option value="name_asc">name A–Z</option><option value="name_desc">name Z–A</option><option value="members_desc">most members</option><option value="members_asc">fewest members</option></select>
+<output class="hx-wp-count" data-wp-count aria-live="polite">{{ cards|length }} of {{ cards|length }}</output>
+</form>
+</div>
+</section>{% endif %}
+<section class="hx-section hx-wp-section">
+<div class="row g-3" data-wp-grid>
+{% for card in cards %}{% set c, me = card.company, card.me %}{% set pos = positions[me.position] %}{% set n = card.members|length %}
+<div class="{{ 'col-12' if solo else 'col-sm-6 col-lg-4 col-xxl-3' }}" data-name="{{ c.name|lower }}" data-members="{{ n }}" data-joined="{{ me.joined_at.isoformat() }}"
+     data-text="{{ (c.name ~ ' ' ~ c.description ~ ' ' ~ c.hiring ~ ' ' ~ pos.label)|lower }}" data-tags="{{ me.position if me.position in ('owner', 'co_owner') else 'staff' }} {{ 'listed' if c.listed else 'private' }}{{ ' strict' if not c.allow_other_companies }}">
+<article class="hx-card hx-wp-card hx-reveal{{ ' hx-wp-solo' if solo }}">
+<div class="hx-wp-top">{{ logo(c, pos.icon) }}<span class="hx-wp-pos"><i class="fa-solid {{ pos.icon }}"></i> {{ pos.label }}</span>{% if card.problems %}<i class="fa-solid fa-triangle-exclamation hx-wp-warn" title="Position mismatch: {{ card.problems|join(', ') }}"></i>{% endif %}</div>
+<h2>{{ c.name }}</h2>{% if solo and c.description %}<p class="hx-about">{{ c.description }}</p>{% endif %}
+<div class="hx-wp-num"><b>{{ n }}</b><span>member{{ '' if n == 1 else 's' }}</span></div>
+<div class="hx-avatars" aria-hidden="true">{% for m in card.members[:5] %}{% set url = picture('u', m.user_id) %}{% if url %}<img src="{{ url }}" alt="" width="28" height="28" loading="lazy" decoding="async">{% else %}<span>{{ initials(m.user.username) }}</span>{% endif %}{% endfor %}{% if n > 5 %}<span>+{{ n - 5 }}</span>{% endif %}</div>
+<p class="hx-wp-meta"><span class="hx-listed{{ ' hx-on' if c.listed }}"><i class="fa-solid {{ 'fa-globe' if c.listed else 'fa-lock' }}"></i>{{ 'listed' if c.listed else 'invite only' }}</span>{% if not c.allow_other_companies %}<span class="hx-listed"><i class="fa-solid fa-people-arrows"></i>only here</span>{% endif %}{% if not c.salary_currency %}<span class="hx-listed hx-warn-badge"><i class="fa-solid fa-money-bill-wave"></i>no salaries</span>{% endif %}</p>
+<div class="hx-wp-go"><button type="button" class="hx-btn hx-btn-sm" data-mdb-modal-init data-mdb-target="#c-{{ c.id }}" aria-label="View {{ c.name }}"><i class="fa-solid fa-eye"></i><span>view</span></button>
+<a href="/chats#co-{{ c.id }}" class="hx-btn hx-btn-sm hx-btn-ghost" aria-label="Chats in {{ c.name }}{{ ' (' ~ card.unread ~ ' new)' if card.unread }}"><i class="fa-solid fa-comments"></i><span>chat</span>{% if card.unread %}<b class="hx-side-count">{{ card.unread }}</b>{% endif %}</a></div>
+</article></div>
+{% endfor %}
+</div>
+<p class="hx-empty" data-wp-empty hidden><i class="fa-solid fa-ghost"></i>No company matches. Clear the search or pick another filter.</p>
+</section>
+</div>{% endblock %}
+{% block modals %}
+{% for card in cards %}{% set c, me = card.company, card.me %}{# the company's dialog: members, about, positions, invite code, actions #}
+<div class="modal fade hx-modal" id="c-{{ c.id }}" tabindex="-1" aria-labelledby="c-{{ c.id }}-title" aria-hidden="true">
+<div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+<div class="modal-header hx-term-bar"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><h2 class="modal-title hx-term-title" id="c-{{ c.id }}-title">~/workplaces/{{ c.name }}</h2>
+<span class="hx-term-meta"><i class="fa-solid {{ positions[me.position].icon }}"></i> {{ positions[me.position].label }}</span>
+<button type="button" class="hx-icon-btn hx-modal-x" data-mdb-dismiss="modal" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
+<div class="modal-body">
+<div class="hx-dlg-head">{{ logo(c, 'fa-building', 'hx-logo-lg') }}<h3 class="hx-title"><span class="hx-prompt">#</span> {{ c.name }}</h3></div>
+<p class="hx-sub">// since {{ at(c.created_at, '%d %b %Y') }} · {{ card.members|length }} member{{ '' if card.members|length == 1 else 's' }} · you joined {{ at(me.joined_at, '%d %b %Y') }} ({{ me.joined_at|tenure }})</p>
+<div class="hx-row-actions hx-gap-sm"><a href="/companies/{{ c.id }}/dashboard" class="hx-btn hx-btn-sm hx-btn-solid"><i class="fa-solid fa-gauge-high"></i><span>view company</span><i class="fa-solid fa-arrow-right"></i></a>
+<a href="/chats#co-{{ c.id }}" class="hx-btn hx-btn-sm"><i class="fa-solid fa-comments"></i><span>chats{{ ' · ' ~ card.unread ~ ' new' if card.unread }}</span></a>
+<a href="/companies/{{ c.id }}/tasks{{ '#give' if me.position in ('owner', 'co_owner', 'manager', 'hr') }}" class="hx-btn hx-btn-sm"><i class="fa-solid fa-list-check"></i><span>{{ 'give tasks' if me.position in ('owner', 'co_owner', 'manager', 'hr') else 'my tasks here' }}</span></a>
+<a href="/companies/{{ c.id }}/tasks#{{ 'meet-new' if me.position in ('owner', 'co_owner', 'manager', 'hr') else 'meetings' }}" class="hx-btn hx-btn-sm"><i class="fa-solid fa-video"></i><span>{{ 'new meeting' if me.position in ('owner', 'co_owner', 'manager', 'hr') else 'meetings' }}</span></a>
+{% if me.position in ('owner', 'co_owner', 'manager') %}<a href="/companies/{{ c.id }}/shop" class="hx-btn hx-btn-sm"><i class="fa-solid fa-store"></i><span>shop</span></a>{% endif %}
+<span class="hx-hint">// its dashboard: who's online{{ ', payroll and the transaction statement' if me.position in ('owner', 'co_owner', 'manager', 'hr') else ' and your pay' }}</span></div>
+{% if card.problems %}<p class="hx-err-msg"><i class="fa-solid fa-triangle-exclamation"></i> Position mismatch found for: {{ card.problems|join(', ') }}. Their position isn't one this company offers.</p>{% endif %}
+<div class="row g-4">
+<div class="col-lg-7">
+<p class="hx-eyebrow">// members</p>
+<table class="hx-table hx-members"><tbody>
+{% for m in card.members %}<tr><td>{{ avatar(m.user_id, m.user.username, 'hx-avatar-sm') }}<a href="/companies/{{ c.id }}/members/{{ m.user_id }}" class="hx-member-link" title="Open {{ m.user.username }}'s profile">{{ m.user.username }}</a>{% if m.user_id == me.user_id %} <small>(you)</small>{% else %}{{ chat_button(c, m) }}{% endif %}<span class="hx-tenure">{{ m.joined_at|tenure }} here</span></td>
+<td><span class="hx-pos"><i class="fa-solid {{ positions[m.position].icon }}"></i>{{ positions[m.position].label }}</span>
+{% if m.user_id in card.manageable %}<form method="post" action="/companies/{{ c.id }}/members/{{ m.user_id }}/position" class="hx-promote">{{ csrf_input(request) }}
+<label class="visually-hidden" for="p-{{ c.id }}-{{ m.user_id }}">New position for {{ m.user.username }}</label>
+<select name="position" id="p-{{ c.id }}-{{ m.user_id }}" class="hx-select" required><option value="" selected disabled>set position…</option>
+{% for key in card.assignable if key != m.position %}<option value="{{ key }}">{{ positions[key].label }}</option>{% endfor %}</select>
+<button class="hx-icon-btn" aria-label="Apply position for {{ m.user.username }}" title="Apply"><i class="fa-solid fa-arrow-up-right-dots"></i></button></form>{% endif %}</td></tr>{% endfor %}
+</tbody></table>
+<p class="hx-hint">// click a name for their profile{% if card.assignable %} · {{ "you (owner) can appoint co-owners and set anyone's position" if card.is_owner else "as a co-owner you can promote or demote staff below you" }}{% endif %}</p>
+</div>
+<div class="col-lg-5">
+{% if c.description or c.hiring %}<p class="hx-eyebrow">// about</p>
+{% if c.description %}<p class="hx-about">{{ c.description }}</p>{% endif %}{% if c.hiring %}<p class="hx-about"><b>hiring:</b> {{ c.hiring }}</p>{% endif %}{% endif %}
+<ul class="hx-co-facts">
+<li><i class="fa-solid fa-location-dot"></i>{% if c.location_address %}<a href="{{ maps_link(c.location_lat, c.location_lng) }}" target="_blank" rel="noopener noreferrer" title="Open on OpenStreetMap">{{ c.location_address }}</a> <span class="hx-verified" title="Verified with Geoapify"><i class="fa-solid fa-circle-check"></i> verified</span>{% else %}<span class="hx-missing">location not set{% if card.can_edit %}: required, open edit{% endif %}</span>{% endif %}</li>
+<li><i class="fa-solid fa-id-badge"></i>{% if c.registration_number %}{{ registration_types[c.registration_type].split(' (')[0] }}: <b>{{ c.registration_number }}</b>{% else %}<span class="hx-missing">registration number not set{% if card.can_edit %}: required, open edit{% endif %}</span>{% endif %}</li>
+{% if c.website %}<li><i class="fa-solid fa-link"></i><a href="{{ c.website }}" target="_blank" rel="noopener noreferrer nofollow ugc">{{ c.website }}</a></li>{% endif %}
+<li><i class="fa-solid fa-door-open"></i>{{ c.exact_address or 'exact address not set' }}</li>
+<li><i class="fa-solid fa-clock"></i>working hours {{ work_hours(c) }} <small>({{ tz_name(c) }}{{ your_hours(c) }})</small></li>
+</ul>
+<p class="hx-eyebrow">// contacts</p>
+<ul class="hx-co-facts">{% for x in card.members if x.position in ('owner', 'co_owner', 'manager', 'hr') %}<li><i class="fa-solid fa-envelope"></i>{{ x.user.username }} <small>({{ positions[x.position].label }})</small> <a href="mailto:{{ x.user.email }}?subject={{ ('[' ~ c.name ~ '] ')|urlencode }}">{{ x.user.email }}</a>{% if x.user_id != me.user_id %} {{ chat_button(c, x) }}{% endif %}</li>{% endfor %}</ul>
+<p class="hx-hint">// 💬 opens a chat in {{ c.name }}: the owner, co-owners, managers and HR can read every chat here</p>
+<p class="hx-eyebrow{{ ' hx-gap' if c.description or c.hiring }}">// positions offered <span class="hx-listed{{ ' hx-on' if c.listed }}"><i class="fa-solid {{ 'fa-globe' if c.listed else 'fa-lock' }}"></i>{{ 'listed' if c.listed else 'invite only' }}</span>{% if not c.allow_other_companies %}<span class="hx-listed" title="Employees can't join other companies while they work here"><i class="fa-solid fa-people-arrows"></i>works only here</span>{% endif %}</p>
+{% set sal = c.salary_of() %}<div class="hx-chips">{% for key in c.positions %}<span class="hx-pos"><i class="fa-solid {{ positions[key].icon }}"></i>{{ positions[key].label }}{% if key in sal %}<b class="hx-pos-pay">≥ {{ '{:,}'.format(sal[key]) }}</b>{% endif %}</span>{% endfor %}</div>
+{% if c.salary_currency %}<p class="hx-hint hx-gap-sm">// minimum salaries, in {{ c.salary_currency }} per {{ c.salary_period }}</p>
+{% else %}<p class="hx-err-msg hx-gap-sm"><i class="fa-solid fa-money-bill-wave"></i> Minimum salaries aren't set yet.{% if card.can_edit %} Every position needs one: open edit to add them.{% endif %}</p>{% endif %}
+{% if card.can_edit %}<p class="hx-eyebrow hx-gap">// logo</p>
+<div class="hx-pic-row">{{ logo(c, 'fa-building', 'hx-logo-lg') }}
+<div class="hx-pic-forms"><form method="post" action="/companies/{{ c.id }}/logo" enctype="multipart/form-data" class="hx-pic-form">{{ csrf_input(request) }}<label class="hx-field hx-file"><i class="fa-solid fa-image"></i><span class="visually-hidden">Logo for {{ c.name }}</span><input type="file" name="file" accept="image/png,image/jpeg,image/webp,image/gif" required></label>
+<button class="hx-btn hx-btn-sm" data-busy="uploading…"><i class="fa-solid fa-upload"></i><span>{{ 'replace' if picture('c', c.id) else 'upload' }} logo</span></button></form></div></div>
+<p class="hx-hint">// required for every company, shown big in search · square works best · JPEG, PNG, WebP or GIF · re-encoded, metadata removed</p>
+{% if not picture('c', c.id) %}<p class="hx-err-msg"><i class="fa-solid fa-image"></i> {{ c.name }} has no logo: add one before you can edit it again.</p>{% endif %}{% endif %}
+{% if card.can_edit %}<div class="hx-row-actions hx-gap-sm"><button type="button" class="hx-btn hx-btn-sm" data-mdb-modal-init data-mdb-target="#edit-{{ c.id }}"><i class="fa-solid fa-pen-to-square"></i><span>edit company &amp; positions</span></button>
+<a href="/people?company={{ c.id }}" class="hx-btn hx-btn-sm"><i class="fa-solid fa-users-viewfinder"></i><span>find people</span></a>
+<a href="/companies/{{ c.id }}/grow" class="hx-btn hx-btn-sm"><i class="fa-solid fa-seedling"></i><span>grow (AI)</span></a></div>{% endif %}
+{% if card.can_invite %}<p class="hx-eyebrow hx-gap">// invite code (share it to let people join)</p>
+<div class="hx-code"><code>{{ c.id }}</code><button type="button" class="hx-icon-btn hx-copy" data-copy="{{ c.id }}" aria-label="Copy code" title="Copy code"><i class="fa-solid fa-copy"></i></button></div>{% endif %}
+<p class="hx-eyebrow hx-gap">// actions</p>
+{% if card.is_owner %}
+<form method="post" action="/companies/{{ c.id }}/delete" class="hx-danger">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-trash"></i><span class="visually-hidden">Type the company name to confirm</span><input name="confirm" placeholder="type &quot;{{ c.name }}&quot; to delete" maxlength="64" autocomplete="off" required></label>
+<button class="hx-btn hx-btn-danger" data-busy="deleting…"><span>delete company</span><i class="fa-solid fa-trash"></i></button>
+<p class="hx-hint">// removes it from every member's workplaces</p>
+</form>
+{% else %}
+<form method="post" action="/companies/{{ c.id }}/leave">{{ csrf_input(request) }}<button class="hx-btn hx-btn-danger" data-busy="asking…"><span>ask to leave</span><i class="fa-solid fa-door-open"></i></button></form>
+<p class="hx-hint">// someone above you approves it once every salary due to you is paid</p>
+{% endif %}
+</div>
+</div>
+</div>
+</div></div></div>
+{% endfor %}
+{% for card in cards if card.can_edit %}{% set c = card.company %}{# edit dialog: opened from the company's dialog, or by /workplaces#edit-<id> (the instruction bar links there) #}
+<div class="modal fade hx-modal" id="edit-{{ c.id }}" tabindex="-1" aria-labelledby="edit-{{ c.id }}-title" aria-hidden="true">
+<div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+<div class="modal-header hx-term-bar"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><h2 class="modal-title hx-term-title" id="edit-{{ c.id }}-title">~/workplaces/{{ c.name }}/edit</h2>
+<button type="button" class="hx-icon-btn hx-modal-x" data-mdb-dismiss="modal" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
+<div class="modal-body">
+<form method="post" action="/companies/{{ c.id }}/settings" class="hx-form" id="edit-form-{{ c.id }}">{{ csrf_input(request) }}
+{% with held=card.held %}{% include "_company_fields.html" %}{% endwith %}
+</form>
+</div>
+<div class="modal-footer"><button type="button" class="hx-btn hx-btn-ghost" data-mdb-modal-init data-mdb-target="#c-{{ c.id }}"><i class="fa-solid fa-arrow-left"></i><span>back</span></button>
+<button type="button" class="hx-btn hx-btn-ghost" data-mdb-dismiss="modal"><span>cancel</span></button>
+<button class="hx-btn hx-btn-solid" form="edit-form-{{ c.id }}" data-busy="saving…"><span>save changes</span><i class="fa-solid fa-floppy-disk"></i></button></div>
+</div></div></div>
+{% endfor %}{% endblock %}

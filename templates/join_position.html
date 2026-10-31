@@ -1,0 +1,57 @@
+{% extends "base.html" %}{% from "_avatar.html" import logo %}{% from "_terms.html" import terms_box, accept_box %}
+{# routers/companies.py join_confirm_page(): company (with owner loaded), positions (master dict), join_as (the forced starting position), standard_terms,
+   terms_outdated (a pending request accepted an older version of the terms), enquiry (your enquiry chat with it, if you asked something already).
+   Joining needs the company's terms accepted (checkbox + its version). Questions first: an enquiry (routers/chats.py enquire), no joining needed #}
+{% block title %}Join {{ company.name }}{% endblock %}
+{% block content %}<section class="hx-term hx-auth">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/companies/join.sh</span><span class="hx-term-meta"><i class="fa-solid fa-building"></i> found</span></div>
+<div class="hx-term-body">
+<div class="hx-dlg-head">{{ logo(company, 'fa-building', 'hx-logo-lg') }}<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>./join {{ company.name }}</span><span class="hx-cursor" aria-hidden="true">_</span></h1></div>
+<p class="hx-sub">// owned by {{ company.owner.username }}</p>
+{% if company.description %}<p class="hx-about">{{ company.description }}</p>{% endif %}{% if company.hiring %}<p class="hx-about"><b>hiring:</b> {{ company.hiring }}</p>{% endif %}
+{% if not company.allow_other_companies %}<p class="hx-about"><b>rule:</b> employees work only here (no other companies)</p>{% endif %}
+{% if company.location_address or company.website or company.registration_number %}<ul class="hx-co-facts">
+{% if company.location_address %}<li><i class="fa-solid fa-location-dot"></i><a href="{{ maps_link(company.location_lat, company.location_lng) }}" target="_blank" rel="noopener noreferrer" title="Open on OpenStreetMap">{{ company.location_address }}</a> <span class="hx-verified" title="Verified with Geoapify"><i class="fa-solid fa-circle-check"></i> verified</span></li>{% endif %}
+{% if company.registration_number %}<li><i class="fa-solid fa-id-badge"></i>{{ company.registration_type }}: <b>{{ company.registration_number }}</b></li>{% endif %}
+{% if company.website %}<li><i class="fa-solid fa-link"></i><a href="{{ company.website }}" target="_blank" rel="noopener noreferrer nofollow ugc">{{ company.website }}</a></li>{% endif %}
+{% if company.exact_address %}<li><i class="fa-solid fa-door-open"></i>{{ company.exact_address }}</li>{% endif %}
+<li><i class="fa-solid fa-clock"></i>working hours {{ work_hours(company) }} <small>({{ tz_name(company) }}{{ your_hours(company) }})</small></li>
+</ul>{% endif %}
+<div class="hx-boot" aria-hidden="true">
+<p><span class="hx-ok">[  ok  ]</span> company found</p>
+<p><span class="hx-ok">[  ok  ]</span> starting position: {{ positions[join_as].label|lower }}</p>
+<p><span class="hx-wait">[ wait ]</span> confirm to join<span class="hx-cursor">_</span></p>
+</div>
+<div class="hx-join-as"><span class="hx-icon"><i class="fa-solid {{ positions[join_as].icon }}"></i></span>
+<p>You'll join as <b>{{ positions[join_as].label }}</b>{% set sal = company.salary_of() %}{% if company.salary_currency and join_as in sal %}, paid at least <b>{{ '{:,}'.format(sal[join_as]) }} {{ company.salary_currency }} per {{ company.salary_period }}</b>{% endif %}. Only the owner or a co-owner can promote you to
+{% for key in company.positions if key != join_as %}{{ positions[key].label }}{{ ", " if not loop.last }}{% else %}another position{% endfor %}.</p></div>
+{% if blocked %}<p class="hx-err-msg"><i class="fa-solid {{ 'fa-building-columns' if not user.bank else 'fa-id-card' if not user.identity else 'fa-people-arrows' }}"></i> {{ blocked }}</p>
+<div class="hx-actions">{% if not user.bank %}<a href="/settings#bank" class="hx-btn hx-btn-solid"><i class="fa-solid fa-building-columns"></i><span>add bank details</span></a>
+{% elif not user.identity %}<a href="/settings#identity" class="hx-btn hx-btn-solid"><i class="fa-solid fa-id-card"></i><span>add identity proof</span></a>
+{% else %}<a href="/workplaces" class="hx-btn"><i class="fa-solid fa-briefcase"></i><span>my workplaces</span></a>{% endif %}</div>
+{% elif pending %}<p class="hx-ok-msg"><i class="fa-solid fa-hourglass-half"></i> You asked to join as {{ positions[pending.position].label }} {{ pending.created_at|tenure }} ago: waiting for the owner, a co-owner, a manager or HR. You'll be told either way (bell + email).</p>
+{% if terms_outdated %}<p class="hx-err-msg"><i class="fa-solid fa-file-signature"></i> {{ company.name }} changed its terms and conditions since you asked: accept the new version, or your request can't be approved.</p>
+<form method="post" class="hx-form hx-join-forms">{{ csrf_input(request) }}{{ terms_box(company, standard_terms) }}{{ accept_box(company) }}
+<button class="hx-btn hx-btn-solid" name="as_position" value="{{ pending.position }}" data-busy="saving…"><span>accept the new terms</span><i class="fa-solid fa-file-signature"></i></button></form>{% endif %}
+<form method="post" action="/member-requests/{{ pending.id }}/cancel">{{ csrf_input(request) }}<button class="hx-btn hx-btn-ghost"><i class="fa-solid fa-rotate-left"></i><span>withdraw the request</span></button></form>
+{% else %}{% if offered %}<p class="hx-ok-msg"><i class="fa-solid fa-envelope-open-text"></i> {{ company.name }} approached you with an offer: you join straight away, no approval needed.</p>
+{% else %}<p class="hx-hint">// joining needs approval from the owner, a co-owner, a manager or HR. They'll see your profile and skills, your identity proof and your bank details (masked)</p>{% endif %}
+<form method="post" class="hx-form hx-join-forms">{{ csrf_input(request) }}
+<p class="hx-eyebrow">// terms and conditions · read them, then accept to {{ 'join' if offered else 'ask to join' }}</p>
+{{ terms_box(company, standard_terms) }}{{ accept_box(company) }}
+{% if not offered %}<label class="hx-field hx-area"><i class="fa-solid fa-comment"></i><span class="visually-hidden">A note for whoever reviews it (optional)</span><textarea name="note" rows="2" maxlength="500" placeholder="a note for whoever reviews it (optional)"></textarea></label>{% endif %}
+<button class="hx-btn" name="as_position" value="{{ join_as }}" data-busy="sending…"><span>{{ 'join' if offered else 'ask to join' }} as {{ positions[join_as].label|lower }}</span><i class="fa-solid fa-handshake"></i></button>
+{% if freelance in company.positions %}<button class="hx-btn hx-btn-ghost" name="as_position" value="{{ freelance }}" data-busy="sending…"><span>{{ 'join' if offered else 'ask to join' }} as freelancer</span><i class="fa-solid {{ positions[freelance].icon }}"></i></button>{% endif %}
+</form>
+<p class="hx-hint">// {{ positions[join_as].label }}s are paid {{ cycle_every }} from today, and their attendance is tracked while they use {{ app_name }} in working hours ({{ work_hours(company) }}, {{ tz_name(company) }}){% if freelance in company.positions %}. Freelancers are paid the same way but aren't monitored{% endif %}</p>{% endif %}
+<section class="hx-enquire" id="enquire" aria-labelledby="enquire-title">
+<h2 class="hx-eyebrow" id="enquire-title"><i class="fa-solid fa-envelope-open-text" aria-hidden="true"></i> // questions first? ask {{ company.name }}</h2>
+{% if enquiry %}<p class="hx-hint">// you asked {{ company.name }} something already: <a href="/chats/{{ enquiry }}#end">open the enquiry chat</a>, or add to it here</p>
+{% else %}<p class="hx-hint">// no need to join first: it goes to its owner, co-owners and HR as a chat (a company chat: its managers can read it too). Ask about the work, the pay, the hours, its products…</p>{% endif %}
+<form method="post" action="/companies/{{ company.id }}/enquire" class="hx-form">{{ csrf_input(request) }}
+<label class="hx-field hx-area"><i class="fa-solid fa-comment-dots"></i><span class="visually-hidden">Your question for {{ company.name }}</span><textarea name="body" rows="3" minlength="1" maxlength="2000" required placeholder="your question…"></textarea></label>
+<button class="hx-btn hx-btn-ghost" data-busy="sending…"><span>{{ 'add to the enquiry' if enquiry else 'send the enquiry' }}</span><i class="fa-solid fa-paper-plane"></i></button></form>
+</section>
+{% if not single_company() %}<p class="hx-alt">wrong company? <a href="/companies/join">./join with another code</a> · <a href="/companies/search">./search</a></p>{% endif %}
+</div>
+</section>{% endblock %}

@@ -1,0 +1,12 @@
+# The local AI (grow.py): vLLM on the Radeon RX 9060 XT. Built + started by setup_services.ps1 as the "vllm" container, published on 127.0.0.1:8100 only.
+# AMD's image expects Linux's /dev/kfd, but under Windows the card reaches Docker as /dev/dxg: ROCDXG is AMD's bridge between the two (the roct digest is the one pinned in AMD's ROCm CLI),
+# and its amd-smi replaces the image's, which refuses to start without the Linux driver (vLLM then can't tell which device it's on).
+# The vllm-models volume keeps the model: GGUF, because on AMD cards vLLM runs no 4-bit format but this one, and FP8 wouldn't leave room in 16 GB.
+FROM rocm/vllm:rocm7.13.0_gfx120X-all_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1
+ADD --checksum=sha256:28ded1254811192ebace1f76c0227580184af7b27ab2475fb9728295a702d541 https://github.com/ROCm/librocdxg/releases/download/v1.2.2/rocdxg-roct_1.2.2_amd64.deb /tmp/rocdxg-roct.deb
+ADD --checksum=sha256:f9b601457ea513a223c7dd2cc281fb0aef1d11f21f38ce6108dc76e665ad6cc5 https://github.com/ROCm/librocdxg/releases/download/v1.2.2/rocdxg-amd-smi-lib_1.2.2_amd64.deb /tmp/rocdxg-amd-smi.deb
+RUN apt-get update -qq && apt-get install -y --no-install-recommends /tmp/rocdxg-roct.deb /tmp/rocdxg-amd-smi.deb && rm /tmp/rocdxg-*.deb && ldconfig
+ENV HSA_ENABLE_DXG_DETECTION=1 HF_HOME=/models/hf PYTHONUNBUFFERED=1 LD_LIBRARY_PATH=/opt/rocm-wsl/lib:/usr/lib/wsl/lib:$LD_LIBRARY_PATH PYTHONPATH=/opt/rocm-wsl/share/amd_smi:$PYTHONPATH PATH=/opt/rocm-wsl/bin:$PATH
+COPY patch_gguf.py /tmp/patch_gguf.py
+RUN python /tmp/patch_gguf.py && rm /tmp/patch_gguf.py
+EXPOSE 8000

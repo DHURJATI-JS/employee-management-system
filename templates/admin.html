@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{# routers/admin.py console(): use (the server's resources: usage()), offenders (repeat spam / limit offenders, 7 days), warnings (the AI's), banned (accounts),
+   ips (blocked IP list: (entry, comment)), q + found (accounts) + companies (search results). Every action needs the admin session; bans + deletions need a clear reason #}
+{% block title %}Admin console{% endblock %}
+{% macro reason_form(action, label, icon, danger=True) %}<form method="post" action="{{ action }}" class="hx-admin-act">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-pen"></i><span class="visually-hidden">Reason (shown to the people affected)</span><input name="reason" minlength="10" maxlength="400" placeholder="a clear reason (they're told)" required></label>
+<button class="hx-btn hx-btn-sm{{ ' hx-btn-danger' if danger }}" data-busy="…"><i class="fa-solid {{ icon }}"></i><span>{{ label }}</span></button></form>{% endmacro %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/admin</span><span class="hx-term-meta"><i class="fa-solid fa-user-shield"></i> admin session · 2 h · this IP only</span></div>
+<div class="hx-term-body hx-admin-head">
+<h1 class="hx-title"><span class="hx-prompt">#</span> <span data-type>admin console</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<form method="post" action="/admin/logout">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-right-from-bracket"></i><span>sign out</span></button></form>
+<p class="hx-hint"><i class="fa-solid fa-lock" aria-hidden="true"></i> while you're signed in here, this browser can't log in, sign up or recover a user id or password: sign out first</p>
+</div>
+</section>
+<section class="hx-section" id="resources">
+<p class="hx-eyebrow">// resource usage · right now</p>
+<div class="hx-res-grid">
+{% set u = use %}
+<div class="hx-res"><small>CPU ({{ u.cores }} threads)</small><b>{{ u.cpu }}%</b><span class="hx-res-bar"><span data-w="{{ u.cpu }}"></span></span></div>
+<div class="hx-res"><small>memory</small><b>{{ u.ram_used|bytes }} / {{ u.ram_total|bytes }}</b><span class="hx-res-bar"><span data-w="{{ u.ram_pct }}"></span></span></div>
+<div class="hx-res"><small>disk</small><b>{{ u.disk_used|bytes }} / {{ u.disk_total|bytes }}</b><span class="hx-res-bar"><span data-w="{{ u.disk_pct }}"></span></span></div>
+<div class="hx-res"><small>this app</small><b>{{ u.app_ram|bytes }}</b><span>{{ u.app_threads }} threads · up {{ u.app_up|span }}</span></div>
+<div class="hx-res"><small>database</small><b>{{ u.db|bytes }}</b><span>{{ u.users }} accounts · {{ u.companies }} companies · {{ u.banned }} banned</span></div>
+<div class="hx-res"><small>sessions (Redis)</small><b>{{ u.redis|bytes }}</b><span>{{ u.online }} people online now</span></div>
+<div class="hx-res"><small>files on disk</small><b>{{ u.uploads|bytes }}</b><span>uploads · logs {{ u.logs|bytes }}</span></div>
+<div class="hx-res"><small>local AI</small><b>{{ u.models|length }} model{{ '' if u.models|length == 1 else 's' }} loaded</b><span>{% for name in u.models %}{{ name }}{{ ', ' if not loop.last }}{% else %}none loaded{% endfor %} · queue {{ u.ai_queue }}</span></div>
+<div class="hx-res"><small>translator</small><b>{{ 'running' if u.translator else 'not running' }}</b><span>LibreTranslate, on this server</span></div>
+</div>
+</section>
+<section class="hx-section" id="mode">
+<p class="hx-eyebrow">// site switches</p>
+<form method="post" action="/admin/single-company" class="hx-admin-switch">{{ csrf_input(request) }}
+<label class="hx-switch"><input type="checkbox" name="on" value="true" role="switch" data-autosubmit aria-describedby="mode-why"{{ ' checked' if mode.on }}{{ ' disabled' if mode.blocked }}><span class="hx-switch-track" aria-hidden="true"></span>
+<span><b>single company mode</b><small>while it's on, no company can be created on {{ app_name }}. It turns on only while one company or none exists</small></span></label>
+<noscript><button class="hx-btn hx-btn-sm">apply</button></noscript></form>
+{% if mode.blocked %}<p class="hx-err-msg" id="mode-why"><i class="fa-solid fa-triangle-exclamation"></i> Can't be turned on: {{ mode.companies }} companies exist. Single company mode needs one company or none, so delete the others first (find them with the search below).</p>
+{% else %}<p class="hx-hint" id="mode-why">// {{ mode.companies }} compan{{ 'y' if mode.companies == 1 else 'ies' }} on {{ app_name }} · {{ 'on: creating a company is refused for everyone' if mode.on else 'off: it can be turned on' }}</p>{% endif %}
+</section>
+<section class="hx-section" id="warnings">
+<div class="hx-admin-row"><p class="hx-eyebrow">// the AI's warnings · it reads the events by itself after mutes and wrong admin sign-ins</p>
+<form method="post" action="/admin/ai-review">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm"><i class="fa-solid fa-robot"></i><span>ask the AI to review now</span></button></form></div>
+{% if warnings %}<ul class="hx-ai-warn-list">{% for w in warnings %}<li class="hx-ai-warn hx-ai-warn-{{ w.level }}"><b><i class="fa-solid {{ 'fa-circle-exclamation' if w.level == 'high' else 'fa-triangle-exclamation' if w.level == 'medium' else 'fa-circle-info' }}"></i> {{ w.level }} · {{ w.who }}</b>
+<p>{{ w.text }}</p>{% if w.action %}<small>→ {{ w.action }}</small>{% endif %}<time>{{ at(w.created_at, '%d %b, %H:%M') }}</time></li>{% endfor %}</ul>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-shield-heart"></i><span>No warnings yet.</span></p>{% endif %}
+</section>
+<section class="hx-section" id="offenders">
+<p class="hx-eyebrow">// repeat offenders · spam strikes, mutes and rate limits, last 7 days, worst first</p>
+{% if offenders %}<div class="hx-admin-table"><table><thead><tr><th>who</th><th>what</th><th>last</th><th>act</th></tr></thead><tbody>
+{% for o in offenders %}<tr><td>{% if o.user %}<b>{{ o.name or ('account ' ~ o.user) }}</b><small>{{ o.ips|join(', ') }}</small>{% else %}<b>{{ o.ip }}</b><small>not logged in{{ ' · blocked' if o.ip_banned }}</small>{% endif %}</td>
+<td>{% for k, n in o.kinds.items() %}<span class="hx-admin-kind">{{ k }} ×{{ n }}</span>{% endfor %}<small>{{ o.detail }}</small></td><td>{{ at(o.last, '%d %b, %H:%M') }}</td>
+<td>{% if o.user %}{{ reason_form('/admin/users/' ~ o.user ~ '/ban', 'ban', 'fa-user-slash') }}{% elif not o.ip_banned %}<form method="post" action="/admin/ips/ban" class="hx-admin-act">{{ csrf_input(request) }}<input type="hidden" name="ip" value="{{ o.ip }}">
+<label class="hx-field"><i class="fa-solid fa-pen"></i><span class="visually-hidden">Reason</span><input name="reason" minlength="10" maxlength="400" placeholder="a clear reason" required></label><button class="hx-btn hx-btn-sm hx-btn-danger"><i class="fa-solid fa-ban"></i><span>block IP</span></button></form>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-broom"></i><span>Nobody went past the limits in the last 7 days.</span></p>{% endif %}
+</section>
+<section class="hx-section" id="overloads">
+<p class="hx-eyebrow">// limiter overloads · {{ ov.at }} refusals within a minute start one; until {{ ov.hold }} after the last, every incoming IP is logged</p>
+{% if ov.active %}<p class="hx-err-msg"><i class="fa-solid fa-gauge-high"></i> An overload is going on now (since {{ at(ov.active) }}): every incoming IP is being logged.</p>{% endif %}
+{% if ov.cur %}<div class="hx-row-actions hx-gap-sm">{% for r in ov.runs %}<a href="/admin?overload={{ r.key }}#overloads" class="hx-btn hx-btn-sm{{ ' hx-btn-solid' if r.key == ov.cur.key else ' hx-btn-ghost' }}"><span>{{ at(r.since, '%d %b, %H:%M') }} · {{ r.ips }} IPs</span></a>{% endfor %}</div>
+<p class="hx-hint">// {{ at(ov.cur.since) }} to {{ at(ov.cur.last) }}: {{ ov.cur.requests }} requests from {{ ov.cur.ips }} IP addresses, {{ ov.cur.refused }} refused · <a href="/admin/overloads/{{ ov.cur.key }}.csv">download every IP (.csv)</a></p>
+<div class="hx-admin-table"><table><thead><tr><th>IP</th><th>requests</th><th>seen</th><th>act</th></tr></thead><tbody>
+{% for o in ov.ips %}<tr><td><b>{{ o.ip }}</b><small>{{ ov.names.get(o.user_id) or 'not logged in' }} · first asked for {{ o.path }}</small></td><td><b>{{ o.requests }}</b><small>{{ o.refused }} refused</small></td><td>{{ at(o.first_seen, '%H:%M:%S') }} to {{ at(o.last_seen, '%H:%M:%S') }}</td>
+<td>{% if o.ip in ov.banned %}<small>blocked</small>{% else %}<form method="post" action="/admin/ips/ban" class="hx-admin-act">{{ csrf_input(request) }}<input type="hidden" name="ip" value="{{ o.ip }}">
+<label class="hx-field"><i class="fa-solid fa-pen"></i><span class="visually-hidden">Reason</span><input name="reason" minlength="10" maxlength="400" placeholder="a clear reason" required></label><button class="hx-btn hx-btn-sm hx-btn-danger"><i class="fa-solid fa-ban"></i><span>block IP</span></button></form>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+{% if ov.cur.ips > ov.ips|length %}<p class="hx-hint">// the busiest {{ ov.ips|length }} of {{ ov.cur.ips }} are shown: the .csv has every one</p>{% endif %}
+{% else %}<p class="hx-empty"><i class="fa-solid fa-gauge-high"></i><span>No limiter overloads in the last 30 days. Every request is also in the daily activity log, with its IP.</span></p>{% endif %}
+</section>
+<section class="hx-section" id="search">
+<p class="hx-eyebrow">// find an account or a company</p>
+<form method="get" action="/admin" class="hx-admin-search"><label class="hx-field"><i class="fa-solid fa-magnifying-glass"></i><span class="visually-hidden">Username, email or company name</span><input name="q" value="{{ q }}" placeholder="username, email or company name" maxlength="60"></label><button class="hx-btn hx-btn-sm"><span>search</span></button></form>
+{% if q %}<div class="row g-4 hx-gap-sm"><div class="col-lg-6"><p class="hx-eyebrow">// accounts</p>
+{% for u in found %}<div class="hx-admin-item"><b>{{ u.username }}</b><small>{{ u.email }} · joined {{ at(u.created_at, '%d %b %Y') }}{{ ' · BANNED' if u.banned_at }}</small>
+{% if not u.banned_at %}{{ reason_form('/admin/users/' ~ u.id ~ '/ban', 'ban the account', 'fa-user-slash') }}{% endif %}</div>{% else %}<p class="hx-hint">// no account matches</p>{% endfor %}</div>
+<div class="col-lg-6"><p class="hx-eyebrow">// companies</p>
+{% for c in companies %}<div class="hx-admin-item"><b>{{ c.name }}</b><small>owner {{ c.owner.username if c.owner else '?' }} · since {{ at(c.created_at, '%d %b %Y') }}</small>
+{{ reason_form('/admin/companies/' ~ c.id ~ '/delete', 'delete the company', 'fa-trash') }}</div>{% else %}<p class="hx-hint">// no company matches</p>{% endfor %}</div></div>{% endif %}
+<p class="hx-hint hx-gap-sm">// a ban works like deleting the account (out of every company, its own companies deleted, logged out everywhere) except that its chats stay; the login page tells them they're banned and to contact the admin</p>
+</section>
+<section class="hx-section" id="banned">
+<p class="hx-eyebrow">// banned accounts · {{ banned|length }}</p>
+{% for u in banned %}<div class="hx-admin-item"><b>{{ u.username }}</b><small>{{ at(u.banned_at, '%d %b %Y, %H:%M') }} · {{ u.ban_reason }}</small>
+<form method="post" action="/admin/users/{{ u.id }}/unban">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-unlock"></i><span>lift the ban</span></button></form></div>
+{% else %}<p class="hx-hint">// nobody is banned</p>{% endfor %}
+</section>
+<section class="hx-section" id="ips">
+<p class="hx-eyebrow">// blocked IP addresses · {{ ips|length }} (the blocklist file: changes apply at once)</p>
+<form method="post" action="/admin/ips/ban" class="hx-admin-act hx-admin-ipform">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-network-wired"></i><span class="visually-hidden">IP address</span><input name="ip" placeholder="an IP address or a range, e.g. 203.0.113.7 or 203.0.113.0/24" required maxlength="64"></label>
+<label class="hx-field"><i class="fa-solid fa-pen"></i><span class="visually-hidden">Reason</span><input name="reason" minlength="10" maxlength="400" placeholder="a clear reason" required></label>
+<button class="hx-btn hx-btn-sm hx-btn-danger"><i class="fa-solid fa-ban"></i><span>block it</span></button></form>
+{% for entry, note in ips %}<div class="hx-admin-item"><b>{{ entry }}</b><small>{{ note or 'no note' }}</small>
+<form method="post" action="/admin/ips/unban">{{ csrf_input(request) }}<input type="hidden" name="ip" value="{{ entry }}"><button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-unlock"></i><span>unblock</span></button></form></div>
+{% else %}<p class="hx-hint">// no IP address is blocked</p>{% endfor %}
+</section>
+</div>{% endblock %}

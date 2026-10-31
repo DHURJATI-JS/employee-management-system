@@ -1,0 +1,168 @@
+{% extends "base.html" %}{% from "_avatar.html" import avatar %}{% from "_zone.html" import zone_select %}{% from "_bank_fields.html" import bank_codes %}
+{# routers/settings.py settings_page(): your profile picture (user.picture = its URL or None, from system.load_user), owned (names of the companies
+   you own: deleting the account deletes them too), the account forms (change username / delete account, each with your password) + links #}
+{% block title %}Settings{% endblock %}
+{% block content %}<div class="hx-wide">
+<div class="row g-4">
+<div class="col-lg-7">
+<section class="hx-term hx-auth hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/settings/picture</span><span class="hx-term-meta"><i class="fa-solid fa-virus-slash"></i> clamav</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>./set-picture</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// a profile picture helps colleagues and companies recognise you, and gets you seen better in people search</p>
+<div class="hx-pic-row">{{ avatar(user.user_id, user.username, 'hx-avatar-xl') }}
+<div><b>{{ user.username }}</b><small>{{ 'your current picture' if user.picture else 'no picture yet: your initials are shown instead' }}</small></div></div>
+<form method="post" action="/settings/picture" enctype="multipart/form-data" class="hx-form">{{ csrf_input(request) }}
+<label class="hx-field hx-file"><i class="fa-solid fa-image"></i><span class="visually-hidden">Profile picture</span><input type="file" name="file" accept="image/png,image/jpeg,image/webp,image/gif" required></label>
+<p class="hx-hint">// max {{ max_upload_mb }} MB · JPEG, PNG, WebP or GIF · cropped to a square · location &amp; camera data removed · virus-scanned</p>
+<button class="hx-btn" data-busy="uploading…"><span>{{ 'replace picture' if user.picture else 'upload picture' }}</span><i class="fa-solid fa-upload"></i></button>
+</form>
+{% if user.picture %}<form method="post" action="/settings/picture/remove" class="hx-gap-sm">{{ csrf_input(request) }}<button class="hx-btn hx-btn-ghost hx-btn-sm"><i class="fa-solid fa-trash"></i><span>remove picture</span></button></form>{% endif %}
+</div>
+</section>
+<section class="hx-term hx-auth hx-page-head hx-gap" id="contact">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/settings/contact</span><span class="hx-term-meta"><i class="fa-solid fa-shield-halved"></i> re-verified</span></div>
+<div class="hx-term-body">
+<h2 class="hx-title hx-title-sm"><span class="hx-prompt">&gt;</span> email, phone &amp; date of birth</h2>
+<p class="hx-sub">// where your codes and notices go. A new one only counts once you type the code we send to it (it works for {{ ttl }} minutes), and the old one is told. Your companies' owner, co-owners, managers and HR can see both</p>
+<ul class="hx-contact-now">
+<li><i class="fa-solid fa-envelope" aria-hidden="true"></i><span><small>email</small><b>{{ me.email }}</b></span>{% if me.email_verified_at %}<span class="hx-verified" title="verified {{ at(me.email_verified_at, '%d %b %Y') }}"><i class="fa-solid fa-circle-check"></i> verified</span>{% endif %}</li>
+<li><i class="fa-solid fa-mobile-screen-button" aria-hidden="true"></i><span><small>phone</small><b>{{ me.phone or 'none yet' }}</b></span>{% if me.phone and me.phone_verified_at %}<span class="hx-verified" title="verified {{ at(me.phone_verified_at, '%d %b %Y') }}"><i class="fa-solid fa-circle-check"></i> verified</span>{% endif %}</li>
+<li><i class="fa-solid fa-cake-candles" aria-hidden="true"></i><span><small>date of birth</small><b>{% if me.dob %}{{ me.dob.strftime('%d %b %Y') }} · {{ me.dob|age }} years old{% else %}not given yet{% endif %}</b></span>{# user asked: show that it's locked #}
+{% if me.dob %}<span class="hx-verified" title="Set when you signed up: it can't be changed"><i class="fa-solid fa-lock"></i> locked</span>{% else %}<a href="/profile#biodata" class="hx-verified"><i class="fa-solid fa-plus"></i> add it once on your profile</a>{% endif %}</li>
+</ul>
+{% if me.dob %}<p class="hx-hint"><i class="fa-solid fa-lock" aria-hidden="true"></i> your date of birth was set when you signed up and is locked: identity proofs are checked against it, so it can't be changed</p>{% endif %}
+{% for ch, label, icon in (('email', 'email', 'fa-envelope'), ('phone', 'phone number', 'fa-mobile-screen-button')) %}{% set w = waiting.get(ch) %}
+{% if w %}<div class="hx-contact-wait">
+<p class="hx-code-clock"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> new {{ label }} <b class="hx-contact-new">{{ w.value }}</b> waits for its code · it works for <b data-expires-in="{{ w.left }}">{{ w.left // 60 }}:{{ '%02d' % (w.left % 60) }}</b> more · {{ w.tries }} {{ 'try' if w.tries == 1 else 'tries' }}{% if not w.left %}: <span>it expired, send a new one</span>{% endif %}</p>
+<form method="post" action="/settings/contact/verify" class="hx-form">{{ csrf_input(request) }}<input type="hidden" name="channel" value="{{ ch }}">
+<label class="hx-field"><i class="fa-solid fa-hashtag"></i><span class="visually-hidden">The code sent to {{ w.value }}</span><span class="hx-pfx" aria-hidden="true">code:</span><input name="code" placeholder="6 digits" inputmode="numeric" autocomplete="one-time-code" pattern="\s*\d(\s*\d){5}\s*" maxlength="12" required></label>
+<button class="hx-btn hx-btn-solid" data-busy="checking…"><span>confirm the new {{ label }}</span><i class="fa-solid fa-check"></i></button></form>
+<div class="hx-resend"><form method="post" action="/settings/contact/resend">{{ csrf_input(request) }}<input type="hidden" name="channel" value="{{ ch }}"><button class="hx-link"><i class="fa-solid fa-rotate-right"></i> send a new code</button></form>
+<form method="post" action="/settings/contact/cancel">{{ csrf_input(request) }}<input type="hidden" name="channel" value="{{ ch }}"><button class="hx-link"><i class="fa-solid fa-xmark"></i> cancel the change</button></form></div>
+</div>{% endif %}
+<details class="hx-contact-change"><summary><i class="fa-solid {{ icon }}" aria-hidden="true"></i> change your {{ label }}</summary>
+<form method="post" action="/settings/{{ ch }}" class="hx-form">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid {{ icon }}"></i><span class="visually-hidden">New {{ label }}</span><input name="{{ ch }}" type="{{ 'email' if ch == 'email' else 'tel' }}" placeholder="{{ 'the new email' if ch == 'email' else 'the new number, with its country code (+91 …)' }}" autocomplete="{{ 'email' if ch == 'email' else 'tel' }}" maxlength="{{ 255 if ch == 'email' else 32 }}" required></label>
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Your password</span><input name="password" type="password" placeholder="your password" autocomplete="current-password" required></label>
+<button class="hx-btn" data-busy="sending…"><span>send a code to it</span><i class="fa-solid fa-paper-plane"></i></button></form></details>
+{% endfor %}
+{% if dev_delivery %}<p class="hx-hint hx-dev"><i class="fa-solid fa-terminal"></i> dev mode: codes are printed in the server console. Set SMTP_* / SMS_PROVIDER in .env to really send them.</p>{% endif %}
+</div>
+</section>
+<section class="hx-term hx-auth hx-page-head hx-gap" id="bank">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/settings/bank</span><span class="hx-term-meta"><i class="fa-solid fa-lock"></i> encrypted</span></div>
+<div class="hx-term-body">
+<h2 class="hx-title hx-title-sm"><span class="hx-prompt">&gt;</span> bank details</h2>
+<p class="hx-sub">// where your salary is paid. Required before you can join or create a company</p>
+{% if bank %}<div class="hx-pay-to hx-bank-saved"><i class="fa-solid fa-building-columns"></i><div><small>saved · updated {{ bank.updated_at|tenure }} ago</small><b>{{ bank.holder_name }}</b>
+<span>{{ bank_line(bank) }}</span>
+<span class="{{ 'hx-ok' if bank.verified_at else 'hx-missing' }}"><i class="fa-solid {{ 'fa-circle-check' if bank.verified_at else 'fa-circle-exclamation' }}"></i> {{ ('verified with the bank: ' ~ bank.verified_name) if bank.verified_at else ('not verified: automatic checks reach Indian banks only' if bank.country != 'IN' else 'not verified: save it again to check it with the bank' if bank_verify else 'not verified (bank verification is off)') }}</span></div></div>
+{% else %}<p class="hx-err-msg"><i class="fa-solid fa-building-columns"></i> No bank details yet: add them to join or create a company and to get paid.</p>{% endif %}
+<form method="post" action="/settings/bank" class="hx-form hx-gap-sm">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-user"></i><span class="visually-hidden">Account holder's name</span><span class="hx-pfx" aria-hidden="true">holder:</span><input name="holder_name" value="{{ bank.holder_name if bank else '' }}" minlength="2" maxlength="100" placeholder="name exactly as the bank has it" autocomplete="name" required></label>
+<label class="hx-field"><i class="fa-solid fa-building-columns"></i><span class="visually-hidden">Bank name</span><span class="hx-pfx" aria-hidden="true">bank:</span><input name="bank_name" value="{{ bank.bank_name if bank else '' }}" minlength="2" maxlength="100" placeholder="e.g. HDFC Bank" required></label>
+<label class="hx-field"><i class="fa-solid fa-code-branch"></i><span class="visually-hidden">Branch (optional)</span><span class="hx-pfx" aria-hidden="true">branch:</span><input name="branch" value="{{ bank.branch if bank else '' }}" maxlength="100" placeholder="optional"></label>
+{{ bank_codes(bank) }}
+<label class="visually-hidden" for="bank-type">Account type</label>
+<select name="account_type" id="bank-type" class="hx-select hx-select-lg" required>{% for t in account_types %}<option value="{{ t }}"{% if bank and bank.account_type == t %} selected{% endif %}>{{ t }} account</option>{% endfor %}</select>
+<label class="hx-field"><i class="fa-solid fa-hashtag"></i><span class="visually-hidden">Account number or IBAN</span><span class="hx-pfx" aria-hidden="true" data-bank-account-label>account no:</span><input name="account_number" inputmode="numeric" maxlength="40" placeholder="{{ 'type it again to change it (now ••••' ~ bank.account_last4 ~ ')' if bank else '9 to 18 digits' }}"{% if bank %} data-keep="type it again to change it (now ••••{{ bank.account_last4 }})"{% endif %} autocomplete="off" spellcheck="false" required data-bank-account></label>
+<label class="hx-field"><i class="fa-solid fa-hashtag"></i><span class="visually-hidden">Account number or IBAN again</span><span class="hx-pfx" aria-hidden="true">again:</span><input name="account_confirm" inputmode="numeric" maxlength="40" placeholder="confirm the account number" autocomplete="off" spellcheck="false" required data-bank-account></label>
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Your current password</span><span class="hx-pfx" aria-hidden="true">password:</span><input name="password" type="password" autocomplete="current-password" required></label>
+<p class="hx-hint">// a bank in any country: its own code (IFSC, ABA routing number, BSB…) or, where that's how accounts work, the IBAN; the SWIFT/BIC lets companies abroad pay you · the account number / IBAN is stored encrypted (AES-256) and only its last 4 characters are shown again. Payers in your companies see it in full only when they pay you, and must type it back to record the payment</p>
+<button class="hx-btn" data-busy="saving…"><span>{{ 'update bank details' if bank else 'save bank details' }}</span><i class="fa-solid fa-lock"></i></button>
+</form>
+</div>
+</section>
+<section class="hx-term hx-auth hx-page-head hx-gap" id="identity">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/settings/identity</span><span class="hx-term-meta"><i class="fa-solid fa-lock"></i> encrypted</span></div>
+<div class="hx-term-body">
+<h2 class="hx-title hx-title-sm"><span class="hx-prompt">&gt;</span> identity proof</h2>
+<p class="hx-sub">// one government ID + a clear photo of it. Required before you can join or create a company</p>
+{% if identity %}<div class="hx-pay-to hx-bank-saved"><i class="fa-solid fa-id-card"></i><div><small>saved · updated {{ identity.updated_at|tenure }} ago</small><b>{{ identity.name_on_id }}</b>
+<span>{{ id_types[identity.id_type] }} ••••{{ identity.number_last4 }} · <a href="/identity/u/{{ user.user_id }}/photo" target="_blank" rel="noopener">view the photo</a></span>
+<span class="{{ 'hx-ok' if identity.verified_at else 'hx-hint' }}"><i class="fa-solid {{ 'fa-circle-check' if identity.verified_at else 'fa-circle-info' }}"></i> {{ ('verified online (' ~ identity.verified_by ~ '): ' ~ identity.verified_name) if identity.verified_at else 'format and check digit checked' ~ ('' if id_verify else ' · online ID verification is off') }}</span></div></div>
+{% else %}<p class="hx-err-msg"><i class="fa-solid fa-id-card"></i> No identity proof yet: add it to join or create a company.</p>{% endif %}
+<form method="post" action="/settings/identity" enctype="multipart/form-data" class="hx-form hx-gap-sm">{{ csrf_input(request) }}
+<label class="visually-hidden" for="id-type">ID type</label>
+<select name="id_type" id="id-type" class="hx-select hx-select-lg hx-select-wide" required>{% for country, types in id_countries.items() %}<optgroup label="{{ country }}">{% for k, v in types.items() %}<option value="{{ k }}"{% if identity and identity.id_type == k %} selected{% endif %}>{{ v }}{{ ' · checked online' if id_verify and k in id_online }}</option>{% endfor %}</optgroup>{% endfor %}</select>
+<label class="hx-field"><i class="fa-solid fa-hashtag"></i><span class="visually-hidden">ID number</span><span class="hx-pfx" aria-hidden="true">number:</span><input name="id_number" maxlength="30" placeholder="{{ 'type it again to change it (now ••••' ~ identity.number_last4 ~ ')' if identity else 'as printed on the ID' }}" autocomplete="off" spellcheck="false" required></label>
+<label class="hx-field"><i class="fa-solid fa-user"></i><span class="visually-hidden">Name on the ID</span><span class="hx-pfx" aria-hidden="true">name on it:</span><input name="name_on_id" value="{{ identity.name_on_id if identity else '' }}" minlength="2" maxlength="100" placeholder="exactly as printed" autocomplete="name" required></label>
+<label class="hx-field hx-file"><i class="fa-solid fa-camera"></i><span class="visually-hidden">Photo of the ID</span><span class="hx-pfx" aria-hidden="true">photo:</span><input type="file" name="photo" accept="image/png,image/jpeg,image/webp,image/gif" required></label>
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Your current password</span><span class="hx-pfx" aria-hidden="true">password:</span><input name="password" type="password" autocomplete="current-password" required></label>
+<p class="hx-hint">// every number's format (and check digit, where it has one) is checked{% if id_verify %}; PAN, driving licence and voter ID numbers are also verified online with the issuing registry{% endif %} · the number is stored encrypted (only its last 4 characters are shown) · the photo is virus-scanned, re-encoded (metadata removed) and never public: only you and the owner, co-owners and HR of your companies can open it</p>
+<button class="hx-btn" data-busy="saving…"><span>{{ 'update identity proof' if identity else 'save identity proof' }}</span><i class="fa-solid fa-lock"></i></button>
+</form>
+</div>
+</section>
+<section class="hx-term hx-auth hx-page-head hx-gap" id="region">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/settings/region</span><span class="hx-term-meta"><i class="fa-solid fa-earth-asia"></i> {{ region_name(region) }}{{ ' · ' ~ timezone if timezone }}</span></div>
+<div class="hx-term-body">
+<h2 class="hx-title hx-title-sm"><span class="hx-prompt">&gt;</span> region &amp; time zone</h2>
+<p class="hx-sub">// every time in {{ app_name }} is shown on your clock, amounts also in your region's currency ({{ currency_of(region) or 'not set' }}), and your national holidays are on your tasks calendar (no task can be due on them)</p>
+{% if not region or not timezone %}<p class="hx-err-msg"><i class="fa-solid fa-earth-asia"></i> Pick your region and time zone: until you do, times are shown in UTC and your calendar has no holidays.</p>{% endif %}
+<form method="post" action="/settings/region" class="hx-form">{{ csrf_input(request) }}
+{{ zone_select("set-zone", (region ~ ':' ~ timezone) if region and timezone else '') }}
+<button class="hx-btn" data-busy="saving…"><span>save region</span><i class="fa-solid fa-floppy-disk"></i></button></form>
+</div>
+</section>
+<section class="hx-term hx-auth hx-page-head hx-gap" id="changes">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/settings/change-log.txt</span><span class="hx-term-meta"><i class="fa-solid fa-lock"></i> encrypted · password required</span></div>
+<div class="hx-term-body">
+<h2 class="hx-title hx-title-sm"><span class="hx-prompt">&gt;</span> your change log</h2>
+<p class="hx-sub">// every change to your account, profile and documents (identity proof, bank details with their full numbers, CV, picture, region…), your orders, friends and the companies you made, with when and by whom. Kept encrypted while your account exists, and {{ change_days }} days after it's deleted, then erased. Your companies' owners, co-owners, managers and HR also see your profile and document changes in their company's change log</p>
+<form method="post" action="/settings/changes" class="hx-form" data-download>{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Your password, to download your change log</span><span class="hx-pfx" aria-hidden="true">password:</span><input name="password" type="password" autocomplete="current-password" required></label>
+<button class="hx-btn"><span>download it (.txt)</span><i class="fa-solid fa-file-arrow-down"></i></button></form>
+</div>
+</section>
+<section class="hx-term hx-auth hx-page-head hx-gap" id="account">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/settings/account</span><span class="hx-term-meta"><i class="fa-solid fa-key"></i> password required</span></div>
+<div class="hx-term-body">
+<h2 class="hx-title hx-title-sm"><span class="hx-prompt">&gt;</span> change username</h2>
+<p class="hx-sub">// now <b>{{ user.username }}</b>. You'll log in with the new one; your companies, offers and profile stay</p>
+<form method="post" action="/settings/username" class="hx-form">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-user-pen"></i><span class="visually-hidden">New username</span><span class="hx-pfx" aria-hidden="true">new:</span><input name="username" minlength="3" maxlength="32" pattern="[a-zA-Z0-9_]+" placeholder="letters, digits, _" autocomplete="username" required></label>
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Your current password</span><span class="hx-pfx" aria-hidden="true">password:</span><input name="password" type="password" autocomplete="current-password" required></label>
+<button class="hx-btn" data-busy="checking…"><span>change username</span><i class="fa-solid fa-user-pen"></i></button>
+</form>
+<h2 class="hx-title hx-title-sm hx-gap" id="password"><span class="hx-prompt">&gt;</span> change password</h2>
+<p class="hx-sub">// 8 characters or more, not one of the well-known ones, and without your username or the name in your email. A long phrase is the best kind. Your email and phone are told it changed</p>
+<form method="post" action="/settings/password" class="hx-form">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Your current password</span><span class="hx-pfx" aria-hidden="true">now:</span><input name="password" type="password" autocomplete="current-password" required></label>
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">New password</span><span class="hx-pfx" aria-hidden="true">new:</span><input name="new_password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required><button type="button" class="hx-eye" aria-label="Show password" aria-pressed="false"><i class="fa-solid fa-eye"></i><i class="fa-solid fa-eye-slash"></i></button></label>
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">New password again</span><span class="hx-pfx" aria-hidden="true">again:</span><input name="new_password_confirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" required></label>
+<button class="hx-btn" data-busy="checking…"><span>change password</span><i class="fa-solid fa-key"></i></button>
+</form>
+<h2 class="hx-title hx-title-sm hx-gap"><span class="hx-prompt hx-err">!</span> delete account</h2>
+<p class="hx-err-msg">Deletes your account, profile, CV and picture for good{% if owned %}, and the {{ owned|length }} compan{{ 'y' if owned|length == 1 else 'ies' }} you own: <b>{{ owned|join(', ') }}</b> (everyone in {{ 'it' if owned|length == 1 else 'them' }} loses it too). {{ 'It' if owned|length == 1 else 'Each' }} has to be ready to go: every salary paid, every order delivered and no co-owners (hand it to one instead){% endif %}. This can't be undone.</p>
+<ul class="hx-warn-list" role="note">
+<li><i class="fa-solid fa-clock-rotate-left"></i><span><b>Your chat &amp; message history stays for {{ retention_days }} days.</b> Your chat messages stay readable for {{ retention_days }} days after you delete your account by the people in those chats (and each company's owner, co-owners, managers and HR), then are erased for good. The job offers you sent and received are kept {{ retention_days }} days too, but nobody can see them in the app.</span></li>
+<li><i class="fa-solid fa-user-slash"></i><span><b>You can never sign up again with these credentials.</b> Your username <b>{{ user.username }}</b>, your email and your phone number are blacklisted (stored only as one-way hashes): no new account can ever use them.</span></li>
+</ul>
+<form method="post" action="/settings/delete" class="hx-form hx-gap-sm">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Your password, to confirm deleting your account</span><span class="hx-pfx" aria-hidden="true">password:</span><input name="password" type="password" autocomplete="current-password" required></label>
+<button class="hx-btn hx-btn-danger" data-busy="deleting…"><span>delete my account</span><i class="fa-solid fa-trash"></i></button>
+</form>
+</div>
+</section>
+</div>
+<div class="col-lg-5">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/settings</span></div>
+<div class="hx-term-body">
+<h2 class="hx-title hx-title-sm"><span class="hx-prompt">&gt;</span> more settings</h2>
+<nav class="hx-settings-links" aria-label="More settings">
+<a href="/profile"><i class="fa-solid fa-file-pdf"></i><span><b>profile &amp; CV</b><small>headline, skills, experience, CV, and whether company owners can find you</small></span></a>
+<a href="/workplaces"><i class="fa-solid fa-image"></i><span><b>company logos</b><small>open a company you own or co-own, then upload its logo</small></span></a>
+<a href="#bank"><i class="fa-solid fa-building-columns"></i><span><b>bank details</b><small>where your salary goes; needed to join or create a company</small></span></a>
+<a href="#identity"><i class="fa-solid fa-id-card"></i><span><b>identity proof</b><small>your ID's number + a photo of it; needed to join or create a company</small></span></a>
+<a href="/statements"><i class="fa-solid fa-receipt"></i><span><b>statements</b><small>every salary payment you've received, with payslips and receipts</small></span></a>
+<a href="#account"><i class="fa-solid fa-user-gear"></i><span><b>account</b><small>change your username or password, or delete your account (each needs your password)</small></span></a>
+<a href="/credits"><i class="fa-solid fa-shield-halved"></i><span><b>credits &amp; security</b><small>how your pictures, CV and account are protected</small></span></a>
+</nav>
+</div>
+</section>
+</div>
+</div>
+</div>{% endblock %}

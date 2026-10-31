@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{# routers/seller.py products_page(): c, s, me, manager, products (all of the shop's, live first), categories #}
+{% block title %}Products · {{ c.name }}{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/companies/{{ c.name }}/shop/products</span><span class="hx-term-meta"><i class="fa-solid fa-tags"></i> {{ products|length }}</span></div>
+<div class="hx-term-body"><h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>ls products</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// <a href="/companies/{{ c.id }}/shop">shop dashboard</a> · <a href="/shop/s/{{ s.public_id }}">your shop front</a></p></div>
+</section>
+{% if manager %}<details class="hx-section" id="new"{{ ' open' if not products }}><summary class="hx-eyebrow">// add a product <i class="fa-solid fa-chevron-down"></i></summary>
+<form method="post" action="/companies/{{ c.id }}/shop/products" class="hx-card hx-form">{{ csrf_input(request) }}{% with p=None %}{% include "_product_fields.html" %}{% endwith %}
+<button class="hx-btn hx-btn-solid" data-busy="adding…"><span>add product</span><i class="fa-solid fa-plus"></i></button><p class="hx-hint">// then add its photos and videos on its page</p></form></details>{% endif %}
+<section class="hx-section">{% if products %}<div class="hx-plist">{% for p in products %}<a class="hx-card hx-prow hx-prow-{{ p.status }}" href="/companies/{{ c.id }}/shop/products/{{ p.id }}">
+<span class="hx-cart-img">{% if product_cover(p.id) %}<img src="{{ product_cover(p.id) }}" alt="" width="56" height="56" loading="lazy">{% else %}<i class="fa-solid fa-image"></i>{% endif %}</span>
+<span class="hx-orow-info"><b>{{ p.title }}</b><small>{{ shop_categories[p.category] }} · {{ p.status }} · {{ p.stock }} in stock · {{ p.sold }} sold{{ ' · ' ~ ('%.1f'|format(p.rating_avg|float)) ~ '★ (' ~ p.rating_count ~ ')' if p.rating_count }}</small></span>
+<b>{{ price(p.currency or s.currency, p.price_minor)|striptags }}</b></a>{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-tags"></i><span>No products yet{{ ': add the first one above.' if manager else '.' }}</span></p>{% endif %}</section>
+</div>{% endblock %}

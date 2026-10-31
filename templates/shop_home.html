@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% from "_shop.html" import product_card, stars with context %}
+{# routers/shop.py storefront() / seller_store(): items (Products), total, q, cat, sort, page, pages, sellers {company id: name}, currencies {company id: currency},
+   counts {category: n}, pay (test / cashfree / off), store = {c, s, rating, reviews} on a seller's own shop front #}
+{% block title %}{{ store.c.name ~ ' · shop' if store else 'Shop' }}{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head hx-shop-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/shop{{ '/' ~ store.c.name if store }}</span><span class="hx-term-meta"><i class="fa-solid fa-bag-shopping"></i> {{ total }} product{{ '' if total == 1 else 's' }}</span></div>
+<div class="hx-term-body">
+{% if store %}<div class="hx-store-head">{% if picture('c', store.c.id) %}<img class="hx-store-logo" src="{{ picture('c', store.c.id) }}" alt="" width="64" height="64">{% endif %}
+<div><h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>shop {{ store.c.name }}</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// {{ store.s.tagline or 'products from ' ~ store.c.name }} · {% if store.reviews %}{{ stars(store.rating, store.reviews) }}{% else %}no reviews yet{% endif %} · returns within {{ store.s.returns_days }} days{{ ' · cash on delivery' if store.s.cod }}</p></div></div>
+{% else %}<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>shop --from startups</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<p class="hx-sub">// products from companies on {{ app_name }}: every seller's location + registration is verified · ratings and reviews from real buyers only · ask the AI anything about a product</p>{% endif %}
+<form method="get" class="hx-shop-search" role="search"><label class="hx-field"><i class="fa-solid fa-magnifying-glass"></i><span class="visually-hidden">Search products</span><input name="q" value="{{ q }}" maxlength="100" placeholder="search, e.g. steel water bottle, cotton kurta, wireless earbuds"></label>
+{% if cat %}<input type="hidden" name="cat" value="{{ cat }}">{% endif %}
+<label class="visually-hidden" for="shop-sort">Sort</label><select name="sort" id="shop-sort" class="hx-select hx-select-lg" data-autosubmit>{% for k, v in [('relevance', 'best match'), ('popular', 'most bought'), ('rating', 'top rated'), ('price_low', 'price: low to high'), ('price_high', 'price: high to low'), ('newest', 'newest')] %}<option value="{{ k }}"{{ ' selected' if sort == k }}>{{ v }}</option>{% endfor %}</select>
+<button class="hx-btn hx-btn-solid"><span>search</span><i class="fa-solid fa-arrow-right"></i></button></form>
+{% if not store %}<nav class="hx-cats" aria-label="Categories"><a href="/shop{{ '?q=' ~ q|urlencode if q }}" class="hx-cat{{ ' hx-active' if not cat }}">all</a>{% for k, v in shop_categories.items() %}{% if counts.get(k) or cat == k %}<a href="/shop?cat={{ k }}{{ '&q=' ~ q|urlencode if q }}" class="hx-cat{{ ' hx-active' if cat == k }}">{{ v }}{% if counts.get(k) %} <small>{{ counts[k] }}</small>{% endif %}</a>{% endif %}{% endfor %}</nav>{% endif %}
+{% if pay == 'test' %}<p class="hx-hint hx-test-mode"><i class="fa-solid fa-flask"></i> test mode: checkout uses a pretend payment page, no money moves</p>{% endif %}
+</div>
+</section>
+<section class="hx-section">
+{% if items %}<div class="hx-pgrid">{% for p in items %}{{ product_card(p, sellers.get(p.company_id, '') if not store else '', currencies.get(p.company_id, 'INR')) }}{% endfor %}</div>
+{% if pages > 1 %}<nav class="hx-pager" aria-label="Pages">{% if page > 1 %}<a class="hx-btn hx-btn-sm hx-btn-ghost" href="?q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&page={{ page - 1 }}"><i class="fa-solid fa-arrow-left"></i><span>previous</span></a>{% endif %}<span class="hx-hint">page {{ page }} of {{ pages }}</span>{% if page < pages %}<a class="hx-btn hx-btn-sm hx-btn-ghost" href="?q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&page={{ page + 1 }}"><span>next</span><i class="fa-solid fa-arrow-right"></i></a>{% endif %}</nav>{% endif %}
+{% else %}<p class="hx-empty"><i class="fa-solid fa-box-open"></i><span>{{ 'Nothing matches “' ~ q ~ '”: try other words.' if q else 'No products here yet. Companies that sell open a shop from their company page.' }}</span></p>{% endif %}
+</section>
+</div>{% endblock %}

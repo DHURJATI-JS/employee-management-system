@@ -1,0 +1,30 @@
+{# growth suggestions (grow.py) for profile.html and grow_company.html. instant = [{icon, priority, title, detail}] (rules + pgvector), review = the latest
+   AIReview or None, start = POST url for a new AI review, poll = its status url (app.js reloads when it's done), what = "profile" / "company" #}
+{% set ai = ai_status() %}{% set icons = {'photo': 'fa-camera', 'name': 'fa-signature', 'headline': 'fa-heading', 'description': 'fa-align-left', 'hiring': 'fa-user-plus', 'skills': 'fa-microchip',
+  'experience': 'fa-hourglass-half', 'salary': 'fa-sack-dollar', 'positions': 'fa-stairs', 'visibility': 'fa-globe', 'cv': 'fa-file-pdf', 'team': 'fa-people-group', 'other': 'fa-lightbulb'} %}
+<section class="hx-term hx-page-head hx-grow" id="grow">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/grow/{{ what }}</span>
+<span class="hx-term-meta hx-ai-meta{{ ' hx-ai-on' if ai.ready else ' hx-ai-offline' }}"><i class="fa-solid {{ 'fa-circle-check' if ai.ready else 'fa-plug-circle-xmark' }}"></i> {{ 'AI ready' if ai.ready else 'AI offline' }}</span></div>
+<div class="hx-term-body">
+<h2 class="hx-title hx-title-sm"><span class="hx-prompt">&gt;</span> grow your {{ what }}</h2>
+<p class="hx-sub">// instant suggestions from your details and the market (pgvector), plus a deeper review by the local AI, which also looks at the {{ 'photo and CV' if what == 'profile' else 'logo' }}</p>
+<div class="row g-4">
+<div class="col-lg-6 hx-grow-col">
+<p class="hx-eyebrow">// instant · {{ instant|length }} suggestion{{ '' if instant|length == 1 else 's' }}</p>
+{% if instant %}<ul class="hx-tips">{% for t in instant %}<li class="hx-tip-item hx-pri-{{ t.priority }}"><i class="fa-solid {{ t.icon }}"></i><div><b>{{ t.title }}</b><span>{{ t.detail }}</span></div><em>{{ t.priority }}</em></li>{% endfor %}</ul>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-trophy"></i>Nothing left to fix here: looking great.</p>{% endif %}
+</div>
+<div class="col-lg-6 hx-grow-col">
+<p class="hx-eyebrow">// AI review</p>
+{% if not ai.ready %}<div class="hx-ai-off" role="alert"><i class="fa-solid fa-plug-circle-xmark"></i><div><b>The AI isn't available</b><span>{{ ai.detail }}. The instant suggestions still work.</span></div></div>{% endif %}
+{% if review and review.status == 'running' %}<div class="hx-ai-running" data-ai-poll="{{ poll }}" role="status"><span class="hx-spinner" aria-hidden="true"></span><div><b>The AI is thinking…</b><span>started {{ review.started_at|tenure }} ago · this page updates by itself when it's done · cancelled if there's no answer within 5 minutes</span></div></div>
+{% else %}<form method="post" action="{{ start }}">{{ csrf_input(request) }}<button class="hx-btn hx-btn-solid hx-ai-btn"{% if not ai.ready %} disabled aria-disabled="true" title="{{ ai.detail }}"{% endif %} data-busy="starting…"><i class="fa-solid {{ 'fa-wand-magic-sparkles' if ai.ready else 'fa-ban' }}"></i><span>{{ ('review again' if review else 'review with AI') if ai.ready else 'AI unavailable' }}</span></button></form>{% endif %}
+{% if review and review.status == 'error' %}<p class="hx-err-msg"><i class="fa-solid fa-triangle-exclamation"></i> {{ review.error }}</p>{% endif %}
+{% if review and review.status == 'done' %}
+{% if review.summary %}<p class="hx-about hx-ai-summary"><i class="fa-solid fa-robot"></i> {{ review.summary }}</p>{% endif %}
+<ul class="hx-tips">{% for s in review.items %}<li class="hx-tip-item hx-pri-{{ s.priority }}"><i class="fa-solid {{ icons.get(s.area, 'fa-lightbulb') }}"></i><div><b>{{ s.title }}</b><span>{{ s.detail }}</span></div><em>{{ s.priority }}</em></li>{% endfor %}</ul>
+<p class="hx-hint">// {{ review.engine }} · {{ review.finished_at|tenure }} ago · suggestions only: nothing is changed for you</p>{% endif %}
+</div>
+</div>
+</div>
+</section>

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{# Signup step 2: rendered by routers/auth.py verify_page() with pending (the PendingSignup), masked_email, masked_phone, ttl, dev_delivery #}
+{% block title %}Verify{% endblock %}
+{% block content %}<section class="hx-term hx-auth">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/auth/verify.sh</span><span class="hx-term-meta"><i class="fa-solid fa-shield-halved"></i> 2 factors</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>./verify</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<div class="hx-boot" aria-hidden="true">
+<p>{% if pending.email_verified %}<span class="hx-ok">[  ok  ]</span>{% else %}<span class="hx-wait">[ wait ]</span>{% endif %} email {{ masked_email }}</p>
+<p>{% if pending.phone_verified %}<span class="hx-ok">[  ok  ]</span>{% else %}<span class="hx-wait">[ wait ]</span>{% endif %} phone {{ masked_phone }}</p>
+<p><span class="hx-ok">[  ok  ]</span> codes expire in {{ ttl }} min, 5 tries each</p>
+</div>
+<form method="post" class="hx-form">{{ csrf_input(request) }}
+{% if pending.email_verified %}<p class="hx-hint hx-ok"><i class="fa-solid fa-circle-check"></i> email verified</p>
+{% else %}<label class="hx-field"><i class="fa-solid fa-envelope"></i><span class="visually-hidden">Email code</span><span class="hx-pfx" aria-hidden="true">mail code:</span><input name="email_code" placeholder="6 digits" inputmode="numeric" autocomplete="one-time-code" pattern="\s*\d(\s*\d){5}\s*" maxlength="12" required autofocus></label>{% endif %}
+{% if pending.phone_verified %}<p class="hx-hint hx-ok"><i class="fa-solid fa-circle-check"></i> phone verified</p>
+{% else %}<label class="hx-field"><i class="fa-solid fa-mobile-screen-button"></i><span class="visually-hidden">SMS code</span><span class="hx-pfx" aria-hidden="true">sms code:</span><input name="phone_code" placeholder="6 digits" inputmode="numeric" autocomplete="one-time-code" pattern="\s*\d(\s*\d){5}\s*" maxlength="12" required></label>{% endif %}
+<button class="hx-btn" data-busy="verifying…"><span>verify &amp; create account</span><i class="fa-solid fa-user-check"></i></button>
+</form>
+<div class="hx-resend">
+{% for channel, label in (("email", "email"), ("phone", "sms")) if not pending[channel ~ "_verified"] %}
+<form method="post" action="/register/resend">{{ csrf_input(request) }}<input type="hidden" name="channel" value="{{ channel }}"><button class="hx-link"><i class="fa-solid fa-rotate-right"></i> resend {{ label }} code</button></form>
+{% endfor %}
+</div>
+{% if dev_delivery %}<p class="hx-hint hx-dev"><i class="fa-solid fa-terminal"></i> dev mode: codes are printed in the server console. Set SMTP_* / SMS_PROVIDER in .env to really send them.</p>{% endif %}
+<p class="hx-alt">wrong details? <a href="/register">./signup again</a></p>
+</div>
+</section>{% endblock %}

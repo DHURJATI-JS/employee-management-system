@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% from "_avatar.html" import logo %}
+{# routers/grow.py company_grow() (owner + co-owners): c (salaries + members loaded), instant (rules + pgvector suggestions), review (the latest AI review or None) #}
+{% block title %}Grow {{ c.name }}{% endblock %}
+{% block content %}<div class="hx-wide">
+<div class="hx-dlg-head hx-gap-sm">{{ logo(c, 'fa-building', 'hx-logo-lg') }}<div><h1 class="hx-title">{{ c.name }}</h1><p class="hx-sub">// {{ c.members|length }} member{{ '' if c.members|length == 1 else 's' }} · {{ 'listed' if c.listed else 'invite only' }}{% if c.salary_currency %} · salaries in {{ c.salary_currency }} per {{ c.salary_period }}{% endif %}</p></div></div>
+{% with start="/companies/" ~ c.id ~ "/review", poll="/companies/" ~ c.id ~ "/review/status", what="company" %}{% include "_grow.html" %}{% endwith %}
+<div class="hx-actions"><a href="/companies/{{ c.id }}/dashboard" class="hx-btn hx-back"><i class="fa-solid fa-arrow-left"></i><span>company dashboard</span></a>
+<a href="/workplaces#c-{{ c.id }}" class="hx-btn"><i class="fa-solid fa-briefcase"></i><span>company details</span></a>
+<a href="/workplaces#edit-{{ c.id }}" class="hx-btn"><i class="fa-solid fa-pen-to-square"></i><span>edit the company</span></a></div>
+</div>{% endblock %}

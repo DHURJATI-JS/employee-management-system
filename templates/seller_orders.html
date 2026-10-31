@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% from "_shop.html" import status_pill with context %}
+{# routers/seller.py orders_page(): c, s, orders, items {order id: [OrderItem]}, status (the filter), manager #}
+{% block title %}Orders · {{ c.name }}{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/companies/{{ c.name }}/shop/orders</span><span class="hx-term-meta"><i class="fa-solid fa-box"></i> {{ orders|length }}</span></div>
+<div class="hx-term-body"><h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>orders {{ status or '--all' }}</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<nav class="hx-cats" aria-label="Filter">{% for k, v in [('', 'all'), ('todo', 'to pack + ship'), ('shipped', 'shipped'), ('out_for_delivery', 'out for delivery'), ('delivered', 'delivered'), ('returns', 'returns'), ('cancelled', 'cancelled')] %}<a class="hx-cat{{ ' hx-active' if status == k }}" href="?status={{ k }}">{{ v }}</a>{% endfor %}</nav>
+<p class="hx-sub">// <a href="/companies/{{ c.id }}/shop">shop dashboard</a></p></div>
+</section>
+<section class="hx-section">{% if orders %}<div class="hx-olist">{% for o in orders %}<a class="hx-card hx-orow" href="/companies/{{ c.id }}/shop/orders/{{ o.id }}">
+<span class="hx-orow-info"><b>{{ o.number }} · {{ o.buyer_name }}{{ ' · return asked' if o.return_requested_at and not o.returned_at }}</b><small>{{ items.get(o.id, [])|map(attribute='title')|join(', ')|truncate(90) }}</small><small>{{ at(o.created_at, '%d %b, %H:%M') }} · {{ o.ship_city }} · {{ 'cash on delivery' if o.payment_method == 'cod' else 'paid online' }}</small></span>
+<span class="hx-orow-end">{{ status_pill(o) }}<b>{{ price(o.currency, o.total_minor)|striptags }}</b></span></a>{% endfor %}</div>
+{% else %}<p class="hx-empty"><i class="fa-solid fa-box-open"></i><span>No orders here.</span></p>{% endif %}</section>
+</div>{% endblock %}

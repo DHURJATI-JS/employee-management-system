@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{# routers/assist.py: plan = {title, summary, action, fields, button, danger, engine}, said (the instruction), how (engine + distance) #}
+{% block title %}Confirm{% endblock %}
+{% block content %}<section class="hx-term hx-auth">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/assist</span><span class="hx-term-meta"><i class="fa-solid fa-wand-magic-sparkles"></i> {{ plan.engine }}</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>./{{ plan.title|replace(' ', '-') }}</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
+<div class="hx-boot" aria-hidden="true">
+<p><span class="hx-ok">[  ok  ]</span> you said: {{ said }}</p>
+<p><span class="hx-ok">[  ok  ]</span> understood {{ how }}</p>
+<p><span class="hx-wait">[ wait ]</span> nothing happens until you confirm<span class="hx-cursor">_</span></p>
+</div>
+<p class="hx-join-as-text">{{ plan.summary }}</p>
+<form method="post" action="{{ plan.action }}" class="hx-form">{{ csrf_input(request) }}
+{% for key, value in plan.fields.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+<button class="hx-btn{{ ' hx-btn-danger' if plan.danger }}" data-busy="working…" autofocus><span>{{ plan.button }}</span><i class="fa-solid fa-check"></i></button>
+</form>
+<p class="hx-alt">not what you meant? <a href="/dashboard">./cancel</a></p>
+</div>
+</section>{% endblock %}

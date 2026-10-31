@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% from "_chatname.html" import person %}
+{# routers/chats.py chat_page(): chat, company (None: a personal chat), name, other (the other person in a direct / personal chat), people [(id, username)], inside
+   (you're in it; else reading as owner/co-owner/manager/HR), me (your membership; None in a personal chat), msgs [{m, text, by (who sent it: current username +
+   real name, or a deleted account)}] (oldest first; not "messages": base.html's toasts use that), more, known {id: {username, real, verified}}, readers
+   [(id, username)], addable [(id, username)], retention.
+   New messages arrive live: the presence socket nudges ({"t": "chat"}), app.js fetches /chats/<id>/since/<last id> and appends them (text only).
+   Each message: [data-msg] = its id, [data-msg-text] = its text (app.js makes its links clickable, previews them, adds copy + forward); its file, if any #}
+{% block title %}{{ name }} · chat{% endblock %}
+{% block content %}<div class="hx-wide">
+<section class="hx-term hx-page-head">
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/chats/{{ company.name if company else 'personal' }}</span><span class="hx-term-meta"><i class="fa-solid fa-lock"></i> encrypted at rest</span></div>
+<div class="hx-term-body">
+<h1 class="hx-title hx-chat-title"><span class="hx-prompt"><i class="fa-solid {{ 'fa-users' if chat.kind == 'group' else 'fa-people-group' if chat.kind == 'pgroup' else 'fa-envelope-open-text' if chat.kind == 'enquiry' else 'fa-user' }}"></i></span> {% if other %}{{ person(other, known.get(other), chat.id) }}{% else %}{{ name }}{% endif %}</h1>
+{% if company %}<p class="hx-sub hx-chat-people">// {% if chat.kind == 'enquiry' %}<span class="hx-chat-tag"><i class="fa-solid fa-envelope-open-text"></i> enquiry · {{ company.name }}</span> asked before joining, answered by its owner, co-owners and HR{% else %}<span class="hx-chat-tag"><i class="fa-solid fa-building"></i> company chat · {{ company.name }}</span> {{ 'one to one' if chat.kind == 'direct' else 'group of ' ~ people|length }}{% endif %}: {% for u, n in people %}{{ person(u, known.get(u), chat.id) }}{{ ', ' if not loop.last }}{% else %}nobody left{% endfor %} · <a href="/chats">all chats</a></p>
+<ul class="hx-warn-list" role="note"><li><i class="fa-solid fa-eye" aria-hidden="true"></i><span><b>Who can read this chat:</b> the people in it, and {{ company.name }}'s owner, co-owners, managers and HR{% if readers and me %} ({% for u, n in readers %}<span data-chat-user="{{ u }}">{{ known[u].username if u in known else n }}</span>{{ ', ' if not loop.last }}{% endfor %}){% endif %}. Messages are encrypted at rest; if an account is deleted, its messages stay readable for {{ retention }} days, then are erased.</span></li></ul>
+{% else %}<p class="hx-sub hx-chat-people">// {{ 'a personal group of ' ~ people|length if chat.kind == 'pgroup' else 'a personal chat, one to one' }}: {% for u, n in people %}{{ person(u, known.get(u), chat.id) }}{{ ', ' if not loop.last }}{% endfor %} · <a href="/chats">all chats</a></p>
+<ul class="hx-warn-list" role="note"><li><i class="fa-solid fa-user-lock" aria-hidden="true"></i><span><b>Who can read this chat:</b> {{ 'only the people in this group' if chat.kind == 'pgroup' else 'only the two of you' }}. It isn't part of any company, so no owner, manager or HR can open it. Messages are encrypted at rest; if an account is deleted, its messages stay readable for {{ retention }} days, then are erased.</span></li></ul>{% endif %}
+{% if not inside %}<p class="hx-err-msg"><i class="fa-solid fa-user-shield"></i> You're reading this chat as {{ company.name }}'s {{ positions[me.position].label }}: you're not in it, so you can't write here.</p>{% endif %}
+{% if chat.kind in ('group', 'pgroup') and (addable or inside) %}<details class="hx-chat-manage"><summary><i class="fa-solid fa-users-gear"></i> manage the group</summary>
+<div class="hx-chat-manage-body">{% if addable %}<form method="post" action="/chats/{{ chat.id }}/members" class="hx-form">{{ csrf_input(request) }}<p class="hx-eyebrow">// add {{ 'friends of yours' if chat.kind == 'pgroup' else 'people' }} (they'll see the whole history)</p>
+<div class="hx-chat-pick" role="group" aria-label="People to add">{% for u, n in addable %}<label class="hx-choice"><input type="checkbox" name="members" value="{{ u }}"><i class="fa-solid fa-user-plus"></i><span>{{ person(u, known.get(u)) }}</span><i class="fa-solid fa-check hx-check"></i></label>{% endfor %}</div>
+<button class="hx-btn hx-btn-sm" data-busy="adding…"><i class="fa-solid fa-user-plus"></i><span>add to the group</span></button></form>{% endif %}
+{% if inside %}<form method="post" action="/chats/{{ chat.id }}/leave">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><i class="fa-solid fa-right-from-bracket"></i><span>leave the group</span></button></form>{% endif %}</div>
+</details>{% endif %}
+</div>
+</section>
+<section class="hx-section">
+{% if more %}<p class="hx-hint">// showing the newest {{ msgs|length }} messages</p>{% endif %}
+<ol class="hx-chat-msgs" data-chat="{{ chat.id }}" data-last="{{ last_id }}" aria-live="polite">{% for x in msgs %}{% set mine = x.m.sender_id == uid %}
+<li class="hx-chat-msg{{ ' hx-chat-mine' if mine }}" data-msg="{{ x.m.id }}"><span class="hx-chat-who">{% if mine %}<b>you</b>{% elif x.by.gone %}<b>{{ x.by.username }}</b> <small>(deleted account · kept until {{ at(x.m.purge_after, '%d %b %Y') }})</small>{% else %}{{ person(x.by.user, x.by, chat.id) }}{% endif %}<time>{{ at(x.m.created_at, '%d %b, %H:%M') }}</time></span>
+{%- if x.fwd %}<small class="hx-chat-fwd"><i class="fa-solid fa-share" aria-hidden="true"></i> forwarded from {{ x.fwd }}</small>{% endif %}
+{%- if x.file and x.file.image %}<a class="hx-chat-img" href="{{ x.file.url }}" target="_blank" rel="noopener"><img src="{{ x.file.url }}" alt="{{ x.file.name }}" loading="lazy"></a>
+{%- elif x.file %}<a class="hx-chat-file" href="{{ x.file.url }}" download><i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i><span>{{ x.file.name }}</span><small>{{ '%.1f MB'|format(x.file.size / 1048576) if x.file.size >= 1048576 else [1, (x.file.size / 1024)|round|int]|max ~ ' KB' }}</small></a>{% endif %}
+{%- if x.text %}<p data-msg-text>{{ x.text }}</p>{% endif %}</li>
+{% else %}<li class="hx-chat-none" data-chat-empty><i class="fa-solid fa-comment-dots"></i> no messages yet{{ ': say hello' if inside else '' }}</li>{% endfor %}</ol>
+<div id="end"></div>
+{% if inside %}<form method="post" action="/chats/{{ chat.id }}/messages" class="hx-form hx-chat-compose" data-chat-form>{{ csrf_input(request) }}
+<label class="hx-btn hx-btn-ghost hx-chat-clip" title="send files or pictures, up to 5 at once (virus-scanned, up to {{ max_upload_mb }} MB each; what's typed goes with the first). You can also drop them anywhere here or paste a screenshot"><i class="fa-solid fa-paperclip" aria-hidden="true"></i><span class="visually-hidden">Send files</span><input type="file" class="visually-hidden" data-chat-file="{{ chat.id }}" multiple></label>
+<label class="hx-field hx-area"><i class="fa-solid fa-comment"></i><span class="visually-hidden">Message</span><textarea name="body" rows="2" maxlength="2000" placeholder="write a message… (Enter to send, Shift+Enter for a new line)" data-chat-input required></textarea></label>
+<button class="hx-btn hx-btn-solid" data-busy="sending…"><span>send</span><i class="fa-solid fa-paper-plane"></i></button></form>{% endif %}
+</section>{# the compose box is the last thing here: sticky to the bottom of the screen, it never covers anything below it #}
+</div>{% endblock %}

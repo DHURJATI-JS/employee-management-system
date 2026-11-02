@@ -16,6 +16,7 @@ from datetime import timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 import changelog
+from aijobs import Halted
 from assist import STOPWORDS, embed, keywords, normalize, profile_text
 from guard import notify
 from payroll import approved_leaves, keep_pay, leave_days, today, working_days
@@ -131,6 +132,7 @@ async def _ask(c_name: str, m_name: str, position: str, options: list[str], s: d
     facts = {"company": c_name, "options": [label(k) for k in options], **facts_of(m_name, position, s, await cv_text(s))}
     schema = {"type": "object", "required": ["promote", "position", "why"], "properties": {"promote": {"type": "boolean"}, "position": {"type": "string", "enum": [label(k) for k in options]}, "why": {"type": "string", "maxLength": 400}}}
     try: out = await asyncio.to_thread(_chat, SYSTEM, json.dumps(facts, ensure_ascii=False), [], schema, 240, 300, 0.2)
+    except Halted: raise  # whoever ran it went offline: the rest of the shortlist isn't read, and nobody is suggested without the AI's say
     except Exception as e: print(f"company AI: {type(e).__name__}: {e}"); return None
     to = next((k for k in options if label(k) == (out or {}).get("position")), None)
     return {"promote": out["promote"] is True, "to": to or options[0], "why": " ".join(str(out.get("why", "")).split())[:590]} if out and "promote" in out else None

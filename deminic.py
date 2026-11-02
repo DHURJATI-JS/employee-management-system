@@ -1,9 +1,9 @@
-"""Deminic, the app's own AI (user asked): a private chat with a local model (vLLM on the graphics card), one per person. It's reached from the instruction bar
+"""Deminic, the app's own AI (user asked): a private chat with the AI engine (grow.py: vLLM on the graphics card, or Claude online), one per person. It's reached from the instruction bar
 (whatever pgvector can't place lands here) and from the chat drawer (its own pinned chat). Only its owner ever sees it: encrypted at rest
 (tables.AIMessage), no company can read it, and the change logs never hold its words. The newest CONTEXT messages are what it remembers, and
 it knows the person's companies + positions (their own data) so it can talk about them. Replies are written on the local-AI queue (meet.ai:
 urgent, like captions, up to VLLM_PARALLEL at once) and pushed to the person's open tabs ({"t": "ai"}).
-The model: VLLM_MODEL, Gemma 3 12B (user asked for a smarter one). It gets a real conversation (system rules, then the earlier turns, then the
+The local model: VLLM_MODEL, Gemma 3 12B (user asked for a smarter one). It gets a real conversation (system rules, then the earlier turns, then the
 new message last) and writes plain text: the old one-prompt + JSON way made it answer the previous question again.
 Stream mode (user asked): the reply shows as it's written ({"t": "ai-part", id, text}, a few times a second, to its owner's own tabs only;
 a page opened meanwhile gets it from as_json). Spam protection (user asked): one question at a time per person, at most BUSY waiting for
@@ -20,10 +20,11 @@ from datetime import UTC
 from sqlalchemy import delete, select, update
 from assist import user_context, vector_intent
 import spam, websearch
-from grow import chat_stream, with_pictures
+from aijobs import Halted, Job, check
+from grow import chat_stream, engine_model, with_pictures
 from meet import ai as queue
 from presence import hub
-from system import APP_NAME, CYCLE_EVERY, VLLM_MODEL, VLLM_PARALLEL, FormError, ai_dir, ai_file, seal, unseal
+from system import APP_NAME, CYCLE_EVERY, VLLM_PARALLEL, FormError, ai_dir, ai_file, seal, unseal
 from tables import POSITIONS, AIMessage, Session
 CONTEXT, KEEP = 12, 300  # messages it remembers; messages kept per person (older ones go)
 BUSY, STALE = 2 * VLLM_PARALLEL, 300  # questions being answered + waiting, everyone's together (more are turned away for a minute); an answer still being written after 5 minutes was lost
@@ -105,17 +106,26 @@ async def ask(db, uid: int, text: str, web: bool = False, picture: str = "") -> 
         for i in old: ai_file(uid, i).unlink(missing_ok=True)
     try: await db.commit()
     except Exception: _waiting.pop(uid, None); ai_file(uid, q.id).unlink(missing_ok=True); raise
-    queue.put(lambda: answer(uid, aid), urgent=True)  # someone's waiting: before meeting notes, like captions
+    job = Job(uid)  # gone while it's written or waits its turn: it stops (aijobs.py), and the question stays counted
+    queue.put(lambda: answer(uid, aid, job), urgent=True)  # someone's waiting: before meeting notes, like captions
     return aid
 def forget(uid: int) -> None: shutil.rmtree(ai_dir(uid), ignore_errors=True)  # their pictures (cleared chat, deleted account)
 def _png64(path) -> str | None:  # our re-encoded WebP -> base64 PNG (what the model's image loader reads)
     from PIL import Image
     if not path.exists(): return None
     with Image.open(path) as im: buf = io.BytesIO(); im.convert("RGB").save(buf, "PNG"); return base64.b64encode(buf.getvalue()).decode()
-async def answer(uid: int, aid: int) -> None:
+async def answer(uid: int, aid: int, job: Job) -> None:
+    with job:
+        try: await _answer(uid, aid)
+        except Halted:  # gone before its turn came: nothing was written
+            async with Session() as db:
+                if a := await db.get(AIMessage, aid): a.status = "failed"; await db.commit()
+            await hub.tell([uid], {"t": "ai", "id": aid})
+async def _answer(uid: int, aid: int) -> None:
     if _waiting.get(uid, (0, 0))[1] != aid: return  # given up on while it waited: the model's time goes to someone still waiting (the load test: stale jobs left the waiting list but stayed in the queue, so it grew past BUSY and everyone behind them went stale too)
     _waiting[uid] = (time.time() + STALE, aid)  # its turn: the clock starts now
     try:
+        check()
         async with Session() as db:
             rows = (await db.scalars(select(AIMessage).where(AIMessage.user_id == uid, AIMessage.id < aid, AIMessage.status == "done").order_by(AIMessage.id.desc()).limit(CONTEXT))).all()[::-1]
             ctx = [{"company": m.company.name, "my position": POSITIONS.get(m.position, {}).get("label", m.position), "people in it": len(m.company.members)} for m in await user_context(db, uid)]
@@ -152,13 +162,14 @@ async def answer(uid: int, aid: int) -> None:
             seen.update(text=text_, at=now); _partial[aid] = {"text": text_, "web": (web or {}).get("query", "") if found else ""}
             asyncio.run_coroutine_threadsafe(hub.tell([uid], {"t": "ai-part", "id": aid, "text": text_, "web": _partial[aid]["web"]}), loop)
         try: reply = _clean(await asyncio.to_thread(chat_stream, msgs, part))
+        except Halted: reply = (seen["text"] + " … (stopped: you went offline)") if seen["text"] else ""
         except Exception as e:
-            print(f"Deminic AI ({VLLM_MODEL}): {type(e).__name__}: {e}")
-            reply = (seen["text"] + " …") if seen["text"] else ""  # cut off: what it did write
+            print(f"Deminic AI ({engine_model()}): {type(e).__name__}: {e}")
+            reply = (seen["text"] + " … (cut off: ask again)") if seen["text"] else ""  # what it did write, saying it isn't all of it
         command = text if hit[0] and hit[1] <= COMMAND_AT and not web and not asked.get("image") else ""  # what they typed is a command the bar knows: a "do it" button
         async with Session() as db:
             if (a := await db.get(AIMessage, aid)) is None: return  # cleared meanwhile
-            a.status, a.body_enc = ("done", _seal(uid, {"text": reply[:4000], "command": command[:160], "web": web, "model": VLLM_MODEL})) if reply else ("failed", _seal(uid, {"text": "", "command": ""}))
+            a.status, a.body_enc = ("done", _seal(uid, {"text": reply[:4000], "command": command[:160], "web": web, "model": engine_model()})) if reply else ("failed", _seal(uid, {"text": "", "command": ""}))
             await db.commit()
     finally:
         _partial.pop(aid, None)

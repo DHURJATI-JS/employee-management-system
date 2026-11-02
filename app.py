@@ -15,21 +15,22 @@ if __name__ == "__main__":  # one click: a fresh copy, or the wrong Python. setu
     if gone or not os.path.exists(os.path.join(HERE, ".env")): sys.exit(run_setup("-Start", *(["-Sync"] if gone and ours else [])))  # (-Sync only for our own environment: the wrong Python doesn't need it rebuilt)
 from fastapi import APIRouter, Depends, FastAPI, Request
 import redis as redis_sync
-from sqlalchemy import text
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 import uvicorn
 import routers
 from decoraters import cache, public
 from system import API_DOCS, APP_NAME, CLAMD_HOST, CLAMD_PORT, DATABASE_URL, REDIS_PASSWORD, REDIS_URL, csrf_token, reddisdb, render, require_login, setup_system
-from tables import MESSAGE_RETENTION_DAYS, Session, engine, purge_expired_messages, setup_database, single_company_mode
+from tables import MESSAGE_RETENTION_DAYS, SITE, Company, Membership, Session, engine, get_db, purge_expired_messages, read_spend, read_switches, save_spend, setup_database, single_company_mode
 from assist import backfill_embeddings, seed_examples
 from grow import check_ai, watch_ai
 from presence import hub
 import guard
 import meet
-import abuse, audit, changelog, companyai, i18n, shop, shopai
+import abuse, audit, changelog, companyai, i18n, idcheck, shop, shopai, winloop
 async def conn_scalars(sql: str) -> list:
     async with engine.connect() as conn: return list((await conn.execute(text(sql))).scalars().all())
-from system import AI_ASSIST, AI_STATUS
+from system import AI_STATUS
 async def maintenance() -> None:  # hourly: erase deleted accounts' message history + change logs once their retention period is over
     while True:
         try:
@@ -37,23 +38,28 @@ async def maintenance() -> None:  # hourly: erase deleted accounts' message hist
             if n := await asyncio.to_thread(changelog.purge): print(f"Erased {n} change logs of deleted accounts / companies (past {changelog.KEEP_DAYS} days)")
         except Exception as e: print(f"maintenance: {type(e).__name__}: {e}")  # e.g. Postgres briefly down: try again next hour
         await asyncio.sleep(3600)
-async def site_switches() -> None:  # the admin's switches (single company mode), re-read every 10 s: the templates' copy stays right even if another process flipped one
+async def site_switches() -> None:  # the admin's switches, re-read every 10 s: the templates' copy stays right even if another process flipped one
     while True:
         await asyncio.sleep(10)
         with contextlib.suppress(Exception):
-            async with Session() as db: await single_company_mode(db, lock=False)
+            async with Session() as db: await single_company_mode(db, lock=False); await read_switches(db)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    asyncio.get_running_loop().set_exception_handler(winloop.quiet_resets)
+    if not winloop.safe(asyncio.get_running_loop()): print("WARNING: start this server with python app.py: this event loop can be stopped from outside (winloop.py)")
     await setup_database()  # as the admin: tables, migrations, least-privilege app role (fails fast if Postgres is down)
     async with engine.connect() as conn: await conn.execute(text("SELECT 1"))  # and the app role can actually log in
-    print(f"Instruction bar: {await seed_examples()} example phrasings embedded in pgvector; engine = {AI_ASSIST}")
+    async with Session() as db: await read_switches(db); await read_spend(db)  # the admin's switches: before anything asks which AI is on
+    print(f"Instruction bar: {await seed_examples()} example phrasings embedded in pgvector; AI mode = {SITE['ai_mode']}")
     print(f"Company search: {await backfill_embeddings()} companies/profiles given a vector")
     AI_STATUS.update(await asyncio.to_thread(check_ai))  # optional: down = a red light on the sidebar's AI finder link + AI reviews disabled, everything else works
     print(f"AI reviews: {AI_STATUS['detail']}")
     watcher = asyncio.create_task(watch_ai())  # re-checked every 15 s
     upkeep = asyncio.create_task(maintenance())
-    presence = asyncio.create_task(hub.run())  # live presence + attendance credits (presence.py)
+    presence, strays = asyncio.create_task(hub.run()), asyncio.create_task(hub.strays())  # live presence + attendance credits; AI work for someone who's gone stops (presence.py)
     payroll_guard = asyncio.create_task(guard.run())  # liability warnings, halts, payday reminders (guard.py)
+    owners = asyncio.create_task(guard.watch())  # owners away / back, requests nobody answered (guard.py)
+    id_checks = asyncio.create_task(idcheck.run())  # open Didit checks, companies' registration numbers (idcheck.py)
     meet.WHISPER.update(await asyncio.to_thread(meet.check_whisper))  # optional: down = meetings without captions
     print(f"Meeting captions: {meet.WHISPER['detail']}")
     meetings, meeting_ai = asyncio.create_task(meet.rooms.run()), asyncio.create_task(meet.ai.run())  # rooms, reminders, captions' English + notes (meet.py)
@@ -66,12 +72,15 @@ async def lifespan(app: FastAPI):
     async with Session() as db: print(f"Single company mode: {'on' if await single_company_mode(db, lock=False) else 'off'} (the admin console's switch)")
     switches = asyncio.create_task(site_switches())
     promotions = asyncio.create_task(companyai.run())  # the company AI's daily promotion reviews, for companies that turned them on (companyai.py)
-    print(f"Shop: payments {shop.pay_mode()}" + (" (TEST MODE: no money moves; set PAYMENTS=cashfree for real payments)" if shop.pay_mode() == "test" else "") + f", platform commission {shop.COMMISSION_PERCENT}%")
+    print(f"Shop: payments {shop.pay_mode()}" + (" (TEST MODE: no money moves; real payments are switched on in the admin console)" if shop.pay_mode() == "test" else "") + f", platform commission {shop.COMMISSION_PERCENT}%")
+    print(f"ID checks: {SITE['id_checks']}" + (f" (Didit {'set up' if idcheck.didit_ready() else 'not set up'}; VIES and GLEIF need no key)" if idcheck.on() else ""))
     print(f"Activity log: {audit.LOG_DIR} (one .txt file per day) · change logs: {changelog.CHANGE_DIR} (encrypted, per company + per person)")
     yield
-    watcher.cancel(); upkeep.cancel(); presence.cancel(); payroll_guard.cancel(); meetings.cancel(); meeting_ai.cancel(); shop_clock.cancel(); activity.cancel(); changes.cancel(); abuses.cancel(); translator.cancel(); switches.cancel(); promotions.cancel()
+    watcher.cancel(); upkeep.cancel(); presence.cancel(); strays.cancel(); payroll_guard.cancel(); owners.cancel(); id_checks.cancel(); meetings.cancel(); meeting_ai.cancel(); shop_clock.cancel(); activity.cancel(); changes.cancel(); abuses.cancel(); translator.cancel(); switches.cancel(); promotions.cancel()
     with contextlib.suppress(Exception): audit.flush()
     with contextlib.suppress(Exception): changelog.flush()
+    with contextlib.suppress(Exception):
+        async with Session() as db: await save_spend(db)
     with contextlib.suppress(Exception): hub.credit(); await hub.flush()  # attendance not written yet
     await reddisdb.aclose()
     await engine.dispose()
@@ -79,10 +88,16 @@ app = FastAPI(title=APP_NAME, lifespan=lifespan, dependencies=[Depends(require_l
 setup_system(app)
 for m in pkgutil.iter_modules(routers.__path__):  # auto-include every routers/*.py that defines `router`
     if isinstance(r := getattr(importlib.import_module(f"routers.{m.name}"), "router", None), APIRouter): app.include_router(r)
+async def the_company(db: AsyncSession, request: Request) -> dict | None:  # single company mode (user asked): whose site this is, and the way to it. Outsiders get its page, never its own address: a company's id is its invite code
+    if not SITE["single_company"] or not (c := (await db.execute(select(Company.id, Company.name).order_by(Company.created_at).limit(1))).first()): return None
+    user = getattr(request.state, "user", None)
+    return {"name": c.name, "href": f"/companies/{c.id}/dashboard" if user and await db.get(Membership, (int(user["user_id"]), c.id)) else "/companies/search"}
+@cache.memoize(timeout=60)
+async def _intro(request: Request): return render(request, "home", {"solo": None})
 @app.get("/")
 @public
-@cache.memoize(timeout=60)
-async def home(request: Request): return render(request, "home")  # public intro page
+async def home(request: Request, db: AsyncSession = Depends(get_db)):  # public intro page: cached, except in single company mode, where it says whose website this is right now
+    return render(request, "home", {"solo": solo}) if (solo := await the_company(db, request)) else await _intro(request)
 @app.get("/csrf")
 @public
 async def csrf(request: Request): return {"csrf_token": csrf_token(request)}  # for clients without an HTML form page
@@ -96,5 +111,5 @@ def ensure_services() -> bool:
     print("Redis/ClamAV/Postgres not reachable, running setup_services.ps1...")
     return run_setup() == 0
 if __name__ == "__main__":
-    if ensure_services(): uvicorn.run("app:app", host="127.0.0.1", port=int(os.getenv("PORT", "8000")), reload=True, timeout_keep_alive=30)  # (the default 5 s closes connections just as a browser reuses them: the load test saw those resets)
+    if ensure_services(): uvicorn.run("app:app", host="127.0.0.1", port=int(os.getenv("PORT", "8000")), reload=True, timeout_keep_alive=30, loop="winloop:make")  # (the default 5 s closes connections just as a browser reuses them: the load test saw those resets. winloop.py: why not uvicorn's own choice of loop)
     else: print("Service setup failed, exiting.")

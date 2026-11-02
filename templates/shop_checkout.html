@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{# routers/shop.py checkout_page(): groups [{c, s, lines [(CartItem, Product)], subtotal, shipping}], addresses [(Address, data)], pay (test / cashfree / off), token (one-time),
+{# routers/shop.py checkout_page(): groups [{c, s, lines [(CartItem, Product)], subtotal, shipping}], addresses [(Address, data)], pay (off / cod / test / cashfree), token (one-time),
    cod (every shop offers it), currencies, countries [(code, name)], region (yours: the address form's default) #}
 {% block title %}Checkout{% endblock %}
 {% block content %}<div class="hx-wide">
@@ -8,6 +8,7 @@
 <div class="hx-term-body"><h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>./checkout</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
 <p class="hx-sub">// where it goes and how you pay · <a href="/shop/cart">back to the cart</a></p></div>
 </section>
+{% if pay == 'off' %}<p class="hx-err-msg"><i class="fa-solid fa-store-slash"></i> The shop isn't taking orders right now: your cart stays as it is.</p>{% endif %}
 <div class="hx-checkout">
 <section class="hx-section">
 <p class="hx-eyebrow">// 1 · deliver to</p>
@@ -16,8 +17,8 @@
 <span><b>{{ a.label }}</b><small>{{ d.name }} · {{ d.line1 }}{{ ', ' ~ d.line2 if d.line2 }}, {{ d.city }}{{ ', ' ~ d.state if d.state }} {{ d.postcode }} · {{ d.phone }}</small></span><i class="fa-solid fa-check hx-check"></i></label>{% endfor %}</div>
 <p class="hx-eyebrow hx-gap-sm">// 2 · pay</p>
 <div class="hx-addresses" role="radiogroup" aria-label="Payment">
-<label class="hx-choice"><input type="radio" name="method" value="online"{{ ' checked' if pay != 'off' }}{{ ' disabled' if pay == 'off' or currencies|length > 1 }}><i class="fa-solid fa-credit-card"></i><span><b>pay online now</b><small>{{ 'test mode: a pretend payment page, no money moves' if pay == 'test' else 'cards, UPI, net banking, wallets on Cashfree' if pay == 'cashfree' else 'off right now' }}{{ ' · one currency per online payment' if currencies|length > 1 }}</small></span><i class="fa-solid fa-check hx-check"></i></label>
-<label class="hx-choice"><input type="radio" name="method" value="cod"{{ ' checked' if pay == 'off' and cod }}{{ ' disabled' if not cod }}><i class="fa-solid fa-money-bill-wave"></i><span><b>cash on delivery</b><small>{{ 'pay the delivery person' if cod else 'not offered by every shop in your cart' }}</small></span><i class="fa-solid fa-check hx-check"></i></label></div>
+{% set online = pay in ('test', 'cashfree') %}<label class="hx-choice"><input type="radio" name="method" value="online"{{ ' checked' if online }}{{ ' disabled' if not online or currencies|length > 1 }}><i class="fa-solid fa-credit-card"></i><span><b>pay online now</b><small>{{ 'test mode: a pretend payment page, no money moves' if pay == 'test' else 'cards, UPI, net banking, wallets on Cashfree' if pay == 'cashfree' else 'off right now' }}{{ ' · one currency per online payment' if currencies|length > 1 }}</small></span><i class="fa-solid fa-check hx-check"></i></label>
+<label class="hx-choice"><input type="radio" name="method" value="cod"{{ ' checked' if pay == 'cod' and cod }}{{ ' disabled' if not cod or pay == 'off' }}><i class="fa-solid fa-money-bill-wave"></i><span><b>cash on delivery</b><small>{{ 'pay the delivery person' if cod else 'not offered by every shop in your cart' }}</small></span><i class="fa-solid fa-check hx-check"></i></label></div>
 </form>{% else %}<p class="hx-empty"><i class="fa-solid fa-location-dot"></i><span>Add a delivery address first (below).</span></p>{% endif %}
 <details class="hx-card hx-gap-sm"{{ ' open' if not addresses }}><summary class="hx-eyebrow">// add an address <i class="fa-solid fa-chevron-down"></i></summary>
 <form method="post" action="/shop/addresses" class="hx-form">{{ csrf_input(request) }}
@@ -37,7 +38,7 @@
 <aside class="hx-section hx-checkout-sum"><p class="hx-eyebrow">// 3 · your orders</p>
 <div class="hx-card">{% for g in groups %}<div class="hx-sum-shop"><b>{{ g.c.name }}</b>{% for ci, p in g.lines %}<span>{{ ci.qty }} × {{ p.title|truncate(42) }}</span>{% endfor %}
 <span class="hx-sum-line">items {{ price(g.s.currency, g.subtotal)|striptags }} · shipping {{ 'free' if not g.shipping else price(g.s.currency, g.shipping)|striptags }}</span><b class="hx-sum-total">{{ price(g.s.currency, g.subtotal + g.shipping) }}</b></div>{% endfor %}
-{% if addresses %}<button class="hx-btn hx-btn-solid hx-place" form="checkout-form" data-busy="placing…"><span>place {{ 'order' if groups|length == 1 else groups|length ~ ' orders' }}</span><i class="fa-solid fa-bag-shopping"></i></button>{% endif %}
+{% if addresses and pay != 'off' %}<button class="hx-btn hx-btn-solid hx-place" form="checkout-form" data-busy="placing…"><span>place {{ 'order' if groups|length == 1 else groups|length ~ ' orders' }}</span><i class="fa-solid fa-bag-shopping"></i></button>{% endif %}
 <p class="hx-hint">// you can cancel until it ships · returns within each shop's return window · online payments are refunded when an order is cancelled</p></div></aside>
 </div>
 </div>{% endblock %}

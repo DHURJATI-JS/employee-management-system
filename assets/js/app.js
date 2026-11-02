@@ -903,6 +903,7 @@
         if (m?.t === "snapshot" && m.company === watch) Object.entries(m.statuses || {}).forEach(([u, s]) => show(u, s));
         if (m?.t === "idle" && Array.isArray(m.companies) && m.companies.length) warnIdle(m.companies.map(String));
         if (m?.t === "active") back();
+        if (m?.t === "out" && m.company === watch) toast("warn", "You're no longer in this company: this page isn't live any more.", true);
         document.dispatchEvent(new CustomEvent("hx-live", { detail: m }));  // the shop, the chat drawer… listen for theirs
         if (m?.t === "chat") onChat(m);
         if (m?.t === "meet" && Number.isInteger(m.id)) {  // a meeting you're invited to has started / starts in 10 minutes (meet.py): a toast with the way in
@@ -1410,6 +1411,14 @@
     const tick = () => (clock.textContent = new Date().toLocaleTimeString([], { hour12: false }));
     tick();
     setInterval(tick, 1000);
+  }
+  // ---- back to the top: shows once the page has scrolled most of a screen down; html's own smooth scrolling does the rest (off under reduced motion) ----
+  const toTop = document.querySelector("[data-to-top]");
+  if (toTop) {
+    const showTop = () => toTop.classList.toggle("hx-to-top-on", scrollY > innerHeight * 0.75);
+    addEventListener("scroll", showTop, { passive: true });
+    showTop();
+    toTop.addEventListener("click", () => scrollTo({ top: 0 }));
   }
   // ---- theme toggle (saved in localStorage; theme.js applies it on load). Icons swap via CSS. ----
   const btn = document.getElementById("hx-theme-toggle");

@@ -10,7 +10,7 @@
 - Deposits (owner / co-owners, with their password): money paid into the company, recorded like a payout (amount, where it came from,
   the company account it was credited to, when, reference, screenshot) and added to the net worth; on the company's statement as money in."""
 import uuid
-import changelog, companyai, completion
+import changelog, companyai, completion, idcheck
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -32,7 +32,7 @@ from routers.tasks import review_counts
 from routers.leave import JOIN_APPROVERS, can_decide, span
 from routers.settings import _verified
 from system import APP_NAME, BANK_VERIFY, FormError, flash, id_file, proof_file, render, same_text, seal, send_email, unflash_saved, unseal
-from tables import (ACCOUNT_TYPES, COMPANY_PROOFS, CURRENCIES, DEFAULT_CURRENCY, FREELANCE, ID_TYPES, MAX_NET_WORTH, PAYERS, POSITIONS, SELF_PAY, STANDARD_TERMS, TOP, BankAccount, Company, CompanyBankAccount, DeletionRequest,
+from tables import (ACCOUNT_TYPES, COMPANY_PROOFS, CURRENCIES, DEFAULT_CURRENCY, FREELANCE, ID_TYPES, MAX_NET_WORTH, PAYERS, POSITIONS, SELF_PAY, standard_terms, TOP, BankAccount, Company, CompanyBankAccount, DeletionRequest,
                     Deposit, IdentityProof, LeaveRequest, MemberRequest, Membership, OwnershipOffer, Payout, Profile, Task, TaskAssignee, User, get_db, monitored, utcnow)
 router = APIRouter(tags=["payroll"])
 label = lambda key: POSITIONS.get(key, {"label": key})["label"]
@@ -84,7 +84,7 @@ async def company_dashboard(request: Request, company_id: uuid.UUID, db: AsyncSe
     return render(request, "company_dashboard", {
         "done": completion.of_company(c, cbank, len(members)) if me.position in TOP else None,  # the setup ring: for the owner + co-owners, who can finish it
         "c": c, "me": me, "members": members, "ledger": ledger, "positions": POSITIONS, "freelance": FREELANCE, "payouts": payouts, "totals": totals(payouts),
-        "lines": lines(payouts, deposits) if ledger else [], "deposited": deposited(deposits), "currencies": CURRENCIES, "default_currency": DEFAULT_CURRENCY, "standard_terms": STANDARD_TERMS,
+        "lines": lines(payouts, deposits) if ledger else [], "deposited": deposited(deposits), "currencies": CURRENCIES, "default_currency": DEFAULT_CURRENCY, "standard_terms": standard_terms(),
         "chat_unread": (await unread_by_company(db, uid)).get(company_id, 0), "rv": await review_counts(db, company_id),
         "tasks_open": await db.scalar(select(func.count()).select_from(TaskAssignee).join(Task, Task.id == TaskAssignee.task_id)
                                       .where(TaskAssignee.user_id == uid, TaskAssignee.done_at.is_(None), Task.status == "open", Task.company_id == company_id)),
@@ -234,7 +234,9 @@ async def company_proof(request: Request, company_id: uuid.UUID, form: CompanyPr
     try: await store_id_photo(form.file, "c", company_id)
     except PictureError as e: raise FormError(f"Identity proof photo: {e}") from None
     was, (c.id_proof_type, c.id_proof_at, name) = c.id_proof_type, (form.id_proof_type, utcnow(), c.name)
+    c.reg_photo_read_at = None  # (a new photo: read afresh)
     await db.commit()
+    if not c.reg_verified_at: idcheck.queue_company(company_id)
     changelog.company(company_id, "identity proof uploaded", f"{COMPANY_PROOFS.get(was, was) + ' → ' if was else ''}{COMPANY_PROOFS[form.id_proof_type]} · new photo")
     flash(request, f"{name}'s identity proof ({COMPANY_PROOFS[form.id_proof_type]}) saved.", "success")
     return RedirectResponse(f"/companies/{company_id}/dashboard#finance", 303)

@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% from "_shop.html" import product_card, stars with context %}
 {# routers/shop.py storefront() / seller_store(): items (Products), total, q, cat, sort, page, pages, sellers {company id: name}, currencies {company id: currency},
-   counts {category: n}, pay (test / cashfree / off), store = {c, s, rating, reviews} on a seller's own shop front #}
+   counts {category: n}, pay (off / cod / test / cashfree), store = {c, s, rating, reviews} on a seller's own shop front #}
 {% block title %}{{ store.c.name ~ ' · shop' if store else 'Shop' }}{% endblock %}
 {% block content %}<div class="hx-wide">
 <section class="hx-term hx-page-head hx-shop-head">
@@ -16,7 +16,7 @@
 <label class="visually-hidden" for="shop-sort">Sort</label><select name="sort" id="shop-sort" class="hx-select hx-select-lg" data-autosubmit>{% for k, v in [('relevance', 'best match'), ('popular', 'most bought'), ('rating', 'top rated'), ('price_low', 'price: low to high'), ('price_high', 'price: high to low'), ('newest', 'newest')] %}<option value="{{ k }}"{{ ' selected' if sort == k }}>{{ v }}</option>{% endfor %}</select>
 <button class="hx-btn hx-btn-solid"><span>search</span><i class="fa-solid fa-arrow-right"></i></button></form>
 {% if not store %}<nav class="hx-cats" aria-label="Categories"><a href="/shop{{ '?q=' ~ q|urlencode if q }}" class="hx-cat{{ ' hx-active' if not cat }}">all</a>{% for k, v in shop_categories.items() %}{% if counts.get(k) or cat == k %}<a href="/shop?cat={{ k }}{{ '&q=' ~ q|urlencode if q }}" class="hx-cat{{ ' hx-active' if cat == k }}">{{ v }}{% if counts.get(k) %} <small>{{ counts[k] }}</small>{% endif %}</a>{% endif %}{% endfor %}</nav>{% endif %}
-{% if pay == 'test' %}<p class="hx-hint hx-test-mode"><i class="fa-solid fa-flask"></i> test mode: checkout uses a pretend payment page, no money moves</p>{% endif %}
+{% if pay == 'test' %}<p class="hx-hint hx-test-mode"><i class="fa-solid fa-flask"></i> test mode: checkout uses a pretend payment page, no money moves</p>{% elif pay == 'off' %}<p class="hx-err-msg"><i class="fa-solid fa-store-slash"></i> The shop isn't taking orders right now.</p>{% endif %}
 </div>
 </section>
 <section class="hx-section">

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
-import changelog, companyai
+import aijobs, changelog, companyai
 from assist import rate_limited
 from form import ActionForm, AIBestForm, AIModeForm
 from guard import halted_reason
@@ -23,21 +23,24 @@ async def _top(db: AsyncSession, request: Request, company_id: uuid.UUID) -> tup
     if not me or me.position not in TOP: raise FormError("Only the owner or a co-owner can use the company AI's controls.")  # same answer whether it exists or not
     return c, me
 back = lambda company_id: RedirectResponse(f"/companies/{company_id}/dashboard#ai", 303)
+def _review_for(me: Membership, company_id: uuid.UUID) -> None:  # it stops if whoever ran it goes offline (aijobs.py)
+    job = aijobs.Job(me.user_id)
+    ai.put(lambda: aijobs.run(job, companyai.review(company_id)))
 @router.post("/companies/{company_id}/ai/mode")
 async def ai_mode(request: Request, company_id: uuid.UUID, form: AIModeForm = Depends(AIModeForm.as_form), db: AsyncSession = Depends(get_db)):
     c, me = await _top(db, request, company_id)
     was, c.ai_promotions, name = c.ai_promotions, form.mode, me.user.username
     await db.commit()
     if was != form.mode: changelog.company(company_id, "AI promotion review changed", f"{was} → {form.mode}", by=name)
-    if was == "off" and form.mode != "off" and not rate_limited(f"ai-review:{company_id}", 1, 600): ai.put(lambda: companyai.review(company_id))  # its first look, right away (flipping the switch can't flood the AI queue)
+    if was == "off" and form.mode != "off" and not rate_limited(f"ai-review:{company_id}", 1, 600): _review_for(me, company_id)  # its first look, right away (flipping the switch can't flood the AI queue)
     flash(request, f"AI promotion review {MODES[form.mode]}." + (" It looks at everyone once a day; its first look has started." if was == "off" and form.mode != "off" else ""), "success")
     return back(company_id)
 @router.post("/companies/{company_id}/ai/review")
 async def ai_review(request: Request, company_id: uuid.UUID, _: ActionForm = Depends(ActionForm.as_form), db: AsyncSession = Depends(get_db)):
-    c, _me = await _top(db, request, company_id)
+    c, me = await _top(db, request, company_id)
     if c.ai_promotions == "off": raise FormError("Turn the AI promotion review on first.")
     if rate_limited(f"ai-review:{company_id}", 1, 600): raise FormError("It ran a few minutes ago: try again in a while.")
-    ai.put(lambda: companyai.review(company_id))
+    _review_for(me, company_id)
     flash(request, "The AI is reading the shortlist's reviews: about a minute per person on this server. What it decides appears here, and you're notified.", "info")
     return back(company_id)
 # ---------- "who's best for this task?": whoever gives tasks here (the owner, co-owners, managers, HR), among the people ranked below them ----------
@@ -55,7 +58,7 @@ async def best_ask(request: Request, company_id: uuid.UUID, form: AIBestForm = D
     page = await _best(db, request, company_id, form.task)
     if rate_limited(f"ai-best:{request.state.user['user_id']}", 10, 3600): raise FormError("That's a lot of questions to the AI in a short time: try again later.")
     await db.commit()  # (no transaction stays open while the model thinks)
-    page["verdict"] = await companyai.verdict(form.task, page["rows"]) or {"best": "", "why": ""}
+    with aijobs.Job(int(request.state.user["user_id"])): page["verdict"] = await companyai.verdict(form.task, page["rows"]) or {"best": "", "why": ""}
     return render(request, "company_best", page)
 @router.post("/companies/{company_id}/ai/calls/{call_id}/{action}")
 async def ai_call(request: Request, company_id: uuid.UUID, call_id: int, action: str, _: ActionForm = Depends(ActionForm.as_form), db: AsyncSession = Depends(get_db)):

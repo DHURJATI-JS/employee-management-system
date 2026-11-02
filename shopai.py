@@ -10,7 +10,7 @@
 - shop tasks: what the shop needs done (pack, restock, reply to a bad review, answer a question, re-price) goes to the least busy of its
   shop staff as a normal task, only in working hours and with a deadline that's in them (tasks.py's rules)."""
 import asyncio, http.client, ipaddress, json, re, socket, ssl, time
-import audit, spam
+import aijobs, audit, spam
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from html import unescape
@@ -25,7 +25,7 @@ from meet import ai as llm
 from payroll import company_tz, tz_name
 from presence import hub
 from routers.tasks import closed, deadline_problem, open_day
-from shop import MAX_REFUND_TRIES, PAY_WINDOW, PaymentError, _tell, close_link, link_status, pay_mode, price, refund_status, settle_checkout, shop_people, shop_price, similar, want_task
+from shop import MAX_REFUND_TRIES, PAY_WINDOW, PaymentError, _tell, cashfree_ready, close_link, link_status, pay_mode, pays_online, price, refund_status, settle_checkout, shop_people, shop_price, similar, want_task
 from system import AI_STATUS, APP_NAME, VLLM_PARALLEL, send_email
 from tables import (SHOP_CATEGORIES, SHOP_MANAGERS, Company, CompetitorLink, Membership, Order, PriceSnapshot, Product, ProductInsight, ProductQuestion, ProductReview, Session, Shop,
                     ShopStaff, ShopTask, Task, TaskAssignee, utcnow)
@@ -59,7 +59,7 @@ async def facts(db, p: Product) -> tuple[str, str]:
                + f"\nrating: {p.rating_avg}/5 from {p.rating_count} reviews\nseller: {c.name if c else '?'}\nhighlights:\n{p.highlights[:1200]}\ndescription:\n{p.description[:2500]}")
     said = "\n".join(f"- {r.rating}/5 \"{clip(r.title, 80)}\": {clip(r.body, 300)}" for r in reviews) or "(no reviews yet)"
     qa = "\n".join(f"- Q: {clip(q.question, 200)} A (seller): {clip(q.seller_answer, 300)}" for q in answered) or "(none yet)"
-    policy = f"shipping: {ship}\nreturns: within {shop.returns_days} days of delivery\ncash on delivery: {'yes' if shop.cod else 'no'}\nonline payment: {'yes' if pay_mode() != 'off' else 'no'}"
+    policy = f"shipping: {ship}\nreturns: within {shop.returns_days} days of delivery\ncash on delivery: {'yes' if shop.cod and pay_mode() != 'off' else 'no'}\nonline payment: {'yes' if pays_online() else 'no'}"
     tagged = f"<product>\n{product}\n</product>\n<reviews>\n{said}\n</reviews>\n<answers>\n{qa}\n</answers>\n<shop>\n{policy}\n</shop>"
     return tagged, f"{product}\n{said}\n{qa}\n{policy}"
 NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
@@ -99,7 +99,9 @@ async def answer_question(qid: int) -> None:
             await want_task(db, p.company_id, f"question:{qid}", f"Answer a question about {p.title[:60]}", f"A shopper asked: “{clip(question, 400)}”\nThe AI couldn't answer it from the listing. Answer it on the shop's questions page (and add the detail to the listing).", 4)
         await db.commit()
     if asker: await hub.tell([asker], {"t": "answer", "id": qid})
-def ask(qid: int) -> None: llm.put(lambda: answer_question(qid), urgent=True)  # a shopper is waiting: before notes / briefs
+def ask(qid: int, uid: int) -> None:  # a shopper is waiting: before notes / briefs. Gone meanwhile: it stops, and the question stays counted (aijobs.py)
+    job = aijobs.Job(uid)
+    llm.put(lambda: aijobs.run(job, answer_question(qid)), urgent=True)
 # ---------- "customers say": the reviews summed up ----------
 SUMMARY = {"type": "object", "required": ["summary", "pros", "cons"], "properties": {"summary": {"type": "string", "maxLength": 420},
            "pros": {"type": "array", "maxItems": 4, "items": {"type": "string", "maxLength": 70}}, "cons": {"type": "array", "maxItems": 4, "items": {"type": "string", "maxLength": 70}}}}
@@ -210,7 +212,7 @@ async def check_competitor(lid: int) -> None:
         if not link: return
         url = link.url
     try: found, err = await asyncio.to_thread(check_link, url), ""
-    except Exception as e: found, err = {}, str(e) if isinstance(e, FetchError) else f"couldn't read the page ({type(e).__name__})"
+    except Exception as e: found, err = {}, str(e) if isinstance(e, (FetchError, aijobs.Halted)) else f"couldn't read the page ({type(e).__name__})"
     async with Session() as db:
         link = await db.get(CompetitorLink, lid)
         p = await db.get(Product, link.product_id) if link else None
@@ -287,7 +289,7 @@ async def brief(pid: int) -> None:
     prompt = (f"{tagged}\n<customers_say>{json.dumps(say) if say else '(no summary yet)'}</customers_say>\n<marketplace_competitors>\n{chr(10).join(market) or '(none found)'}\n</marketplace_competitors>\n"
               f"<web_competitors>\n{chr(10).join(web) or '(none tracked)'}\n</web_competitors>\n<shop_sales_last_30_days>{price(shop.currency, sold30 or 0)}</shop_sales_last_30_days>")
     try: data, err = await asyncio.to_thread(_chat, system, prompt, [], BRIEF, 300, 900, 0.3), ""
-    except Exception as e: data, err = None, f"{type(e).__name__}: {e}"[:300]
+    except Exception as e: data, err = None, str(e) if isinstance(e, aijobs.Halted) else f"{type(e).__name__}: {e}"[:300]
     async with Session() as db:
         row = await db.get(ProductInsight, pid) or ProductInsight(product_id=pid, status="running")
         if data:
@@ -362,15 +364,15 @@ async def expire_unpaid() -> int:
         late = (await db.scalars(select(Order.checkout).where(Order.status == "pending", Order.created_at < utcnow() - PAY_WINDOW).distinct().limit(50))).all()
         for ck in late:
             status = "EXPIRED"
-            if pay_mode() == "cashfree":
+            if cashfree_ready() and await db.scalar(select(Order.id).where(Order.checkout == ck, Order.payment_provider == "cashfree").limit(1)):
                 try: status = await link_status(ck)
                 except Exception: continue
                 if status not in ("PAID", "EXPIRED", "CANCELLED"): status = "EXPIRED" if status != "PARTIALLY_PAID" else ""
             if status: n += await settle_checkout(db, ck, status)
         await db.commit()
     return n
-async def poll_payments() -> None:  # online checkouts still pending: ask Cashfree (webhooks need a public https address; this doesn't)
-    if pay_mode() != "cashfree": return
+async def poll_payments() -> None:  # online checkouts still pending: ask Cashfree (webhooks need a public https address; this doesn't). With its keys, whatever the admin's switch says now: payments under way still land
+    if not cashfree_ready(): return
     async with Session() as db:
         for ck in (await db.scalars(select(Order.checkout).where(Order.status == "pending", Order.payment_provider == "cashfree").distinct().limit(30))).all():
             try: status = await link_status(ck)
@@ -380,7 +382,7 @@ async def poll_payments() -> None:  # online checkouts still pending: ask Cashfr
 async def poll_cancelled() -> None:
     """A cancelled order's payment link stays payable until it's closed: closed here, and money that came in anyway goes back (settle_checkout). Only until the link would have
     expired by itself. No transaction stays open during the calls to Cashfree."""
-    if pay_mode() != "cashfree": return
+    if not cashfree_ready(): return
     async with Session() as db:
         pending = select(Order.checkout).where(Order.status == "pending")
         rows = (await db.scalars(select(Order.checkout).where(Order.status == "cancelled", Order.payment_status == "failed", Order.payment_provider == "cashfree", Order.cancelled_at > utcnow() - 2 * PAY_WINDOW, Order.checkout.not_in(pending)).distinct().limit(30))).all()
@@ -394,7 +396,7 @@ async def poll_cancelled() -> None:
 async def poll_refunds() -> None:
     """Orders on "refund pending" (cancelled or returned after a real payment; user's rule: automatic, through Cashfree): asked for, then followed until it confirms. Turned down: tried
     again under a new refund id, MAX_REFUND_TRIES times; then it needs a person: the platform's page lists it and the shop is told. No lock is held during the calls to Cashfree."""
-    if pay_mode() != "cashfree": return
+    if not cashfree_ready(): return
     async with Session() as db:
         todo = (await db.scalars(select(Order).where(Order.payment_status == "refund_pending", Order.refund_tries < MAX_REFUND_TRIES).order_by(Order.id).limit(30))).all()
     for snapshot in todo:

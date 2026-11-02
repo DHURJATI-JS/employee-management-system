@@ -61,6 +61,10 @@ if not 1 <= CYCLE_DAYS <= 92: raise RuntimeError("CYCLE_DAYS in .env must be a w
 CYCLE_EVERY = "every day" if CYCLE_DAYS == 1 else f"every {CYCLE_DAYS} days"  # as the pages say it: "paid every day" / "paid every 30 days"
 MAX_COMPANIES_PER_ACCOUNT = int(os.getenv("MAX_COMPANIES_PER_ACCOUNT", "10"))  # companies one account can own at a time (user asked: in .env); deleting one or handing it over frees a slot
 if MAX_COMPANIES_PER_ACCOUNT < 1: raise RuntimeError("MAX_COMPANIES_PER_ACCOUNT in .env must be a whole number of at least 1")
+OWNER_AWAY_DAYS = float(os.getenv("OWNER_AWAY_DAYS", "7"))  # an owner not online this many days in a row: their companies halt until they're back (guard.py, user's rule)
+REQUEST_WINDOW_DAYS = float(os.getenv("REQUEST_WINDOW_DAYS", "30"))  # a request to join or leave that nobody answers in this long is declined by the system (guard.py, user's rule)
+if OWNER_AWAY_DAYS <= 0 or REQUEST_WINDOW_DAYS <= 0: raise RuntimeError("OWNER_AWAY_DAYS and REQUEST_WINDOW_DAYS in .env must be more than 0")
+if float(os.getenv("CLAUDE_MONTHLY_LIMIT_USD", "20")) < 0: raise RuntimeError("CLAUDE_MONTHLY_LIMIT_USD in .env can't be below 0")
 OBFUSCATE_ASSETS = os.getenv("OBFUSCATE_ASSETS", "1") != "0"  # 0 = readable class names (still minified), for debugging
 ASSET_SALT = os.getenv("ASSET_SALT") or SECRET_KEY  # change it to re-randomize every class name (without logging anyone out)
 SMTP_HOST, SMTP_PORT = os.getenv("SMTP_HOST", ""), int(os.getenv("SMTP_PORT", "587"))  # no SMTP_HOST: codes are printed to the console
@@ -81,13 +85,9 @@ GEOAPIFY_DETAILS_URL = os.getenv("GEOAPIFY_DETAILS_URL", "https://api.geoapify.c
 # companies') is checked with the bank through Cashfree's Bank Account Verification API (bankcheck.py) before it's saved, and payouts
 # need verified accounts. Off: accounts are saved unverified and nothing is sent anywhere.
 BANK_VERIFY = os.getenv("BANK_VERIFY", "0") == "1"
-# Identity number verification, also switched by hand (ID_VERIFY=1 / 0; off by default): when on, PAN, Indian driving licences and voter IDs
-# are checked online with Cashfree's Verification Suite (idcheck.py); every ID's format + check digit is always checked locally (form.py).
+# The ID checker (idcheck.py): where its switch starts (off by default). The admin console's switch replaces this once it's been used; every ID's format + check digit is always checked locally (form.py).
 ID_VERIFY = os.getenv("ID_VERIFY", "0") == "1"
-CASHFREE_CLIENT_ID, CASHFREE_CLIENT_SECRET = os.getenv("CASHFREE_CLIENT_ID", ""), os.getenv("CASHFREE_CLIENT_SECRET", "")
-CASHFREE_BASE_URL = (os.getenv("CASHFREE_BASE_URL") or ("https://sandbox.cashfree.com" if os.getenv("CASHFREE_ENV", "production") == "sandbox" else "https://api.cashfree.com") + "/verification").rstrip("/")
 AI_STATUS = {"up": False, "ready": False, "detail": "checking the AI…"}  # refreshed every 15 s by grow.watch_ai(); the sidebar's light + AI buttons read it
-AI_ASSIST = os.getenv("AI_ASSIST", "vector").lower()  # instruction bar: "vector" (pgvector, offline) or "claude" (Claude reads it; falls back to vector)
 reddisdb = redis.from_url(REDIS_URL, password=REDIS_PASSWORD, decode_responses=True)  # holds login sessions only
 templates = Jinja2Templates(directory=ROOT / "templates")
 # ---------- passwords (scrypt, random salt, stored as "salt$hash") ----------
@@ -198,7 +198,8 @@ def build_assets() -> dict:
 def asset(path: str) -> str: return build_assets()[path]  # in templates: {{ asset('css/app.css') }}
 # ---------- templates ----------
 TEMPLATE_GLOBALS = {"app_name": APP_NAME, "contact_email": CONTACT_EMAIL, "max_upload_mb": f"{MAX_UPLOAD_MB:g}",  # same for every page and request; add more site-wide values here
-                    "geoapify_key": GEOAPIFY_API_KEY, "cycle_days": CYCLE_DAYS, "cycle_every": CYCLE_EVERY}  # the browser map key (public by nature: restrict it to your site's address at Geoapify); the pay cycle
+                    "geoapify_key": GEOAPIFY_API_KEY, "cycle_days": CYCLE_DAYS, "cycle_every": CYCLE_EVERY,  # the browser map key (public by nature: restrict it to your site's address at Geoapify); the pay cycle
+                    "away_days": f"{OWNER_AWAY_DAYS:g}", "window_days": f"{REQUEST_WINDOW_DAYS:g}"}  # the owner's absence + the unanswered requests' window (guard.py)
 def maps_link(lat: float | None, lng: float | None) -> str:  # {{ maps_link(c.location_lat, c.location_lng) }}: the spot on OpenStreetMap (no account or token needed)
     return f"https://www.openstreetmap.org/?{urlencode({'mlat': f'{lat:.6f}', 'mlon': f'{lng:.6f}'})}#map=17/{lat:.6f}/{lng:.6f}" if lat is not None and lng is not None else ""
 def initials(name: str) -> str:  # "test_amy" -> "TA", "alex" -> "AL"
@@ -303,10 +304,12 @@ async def load_user(request: Request) -> dict | None:
                 request.state.session_revoked = "banned" if current == "banned" else "elsewhere" if summary else "deleted"
         request.state.user = user
     return request.state.user
+SEEN: set[int] = set()  # who opened a page since presence.py last looked
 async def require_login(request: HTTPConnection) -> None:
     """Global dependency (set in app.py): runs before every endpoint except @public ones, puts the Redis session in request.state.user.
     HTTPConnection, so it serves WebSocket routes too (routers/presence.py)."""
     user = await load_user(request)
+    if user and request.headers.get("sec-fetch-mode") == "navigate": SEEN.add(int(user["user_id"]))  # they opened a page (a person did that: a tab left open only polls)
     if wants_html(request) and request.scope["type"] == "http":
         import i18n
         await i18n.prepare(request)  # flash messages waiting for this page: into its language first

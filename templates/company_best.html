@@ -16,9 +16,9 @@
 {% if rows %}<section class="hx-section">
 <form method="post" action="/companies/{{ c.id }}/ai/best" class="hx-ai-ask">{{ csrf_input(request) }}<input type="hidden" name="task" value="{{ task }}">
 <button class="hx-btn hx-btn-solid" data-busy="reading their CVs…"{{ ' disabled' if not ready }}><i class="fa-solid fa-wand-magic-sparkles"></i><span>ask the AI to choose</span></button>
-<p class="hx-hint">// {{ 'the local AI reads the top 5: their reviews, speed, profile and the words of their CVs. About a minute on this server' if ready else "the local AI is offline: the ranking below still works" }}</p></form>
+<p class="hx-hint">// {{ (ai_name() ~ ' reads the top 5: their reviews, speed, profile and the words of their CVs. About a minute') if ready else (ai_name() ~ ' is offline: the ranking below still works') }}</p></form>
 {% if verdict %}{% if verdict.best %}<article class="hx-ai-call hx-gap-sm"><div><i class="fa-solid fa-ranking-star" aria-hidden="true"></i> The AI's choice: <b>{{ verdict.best }}</b><small>{{ verdict.why }}</small></div></article>
-{% else %}<p class="hx-err-msg hx-gap-sm"><i class="fa-solid fa-plug-circle-xmark"></i> The local AI didn't answer in time: go by the ranking below.</p>{% endif %}{% endif %}
+{% else %}<p class="hx-err-msg hx-gap-sm"><i class="fa-solid fa-plug-circle-xmark"></i> The AI didn't answer in time: go by the ranking below.</p>{% endif %}{% endif %}
 <p class="hx-eyebrow hx-gap">// best first, for "{{ task|truncate(80) }}"</p>
 <div class="row g-4">{% for r in rows %}{% set s = r.s %}<div class="col-md-6 col-xl-4"><article class="hx-card hx-best{{ ' hx-best-away' if r.away }}">
 <div class="hx-best-head"><span class="hx-best-no">#{{ loop.index }}</span><div><h2>{{ r.m.user.username }}</h2><small>{{ positions[r.m.position].label }}{% if s.cv and s.cv.years %} · {{ s.cv.years }} years{% endif %}{% if s.resume %} · <i class="fa-solid fa-file-pdf"></i> CV on file{% endif %}</small></div><span class="hx-match" title="how much of the task's words their CV and profile cover"><b>{{ r.fit }}%</b><small>fit</small></span></div>

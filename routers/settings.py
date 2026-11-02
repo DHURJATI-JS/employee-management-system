@@ -13,13 +13,14 @@ from sqlalchemy.orm import joinedload
 from assist import forgive, rate_limited
 import banks
 from bankcheck import BankCheckError, unchecked_why, verify_bank
+import idcheck
 from idcheck import ONLINE, IdCheckError, verify_id
-from form import ActionForm, BankForm, ContactCodeForm, DeleteAccountForm, EmailChangeForm, IdentityForm, PasswordChangeForm, PhoneChangeForm, PictureForm, RegionForm, UsernameForm, password_problem
+from form import ActionForm, BankForm, ContactCodeForm, DeleteAccountForm, DobChangeForm, EmailChangeForm, IdentityCheckForm, IdentityForm, PasswordChangeForm, PhoneChangeForm, PictureForm, RegionForm, UsernameForm, adult_since, password_problem
 from media import PictureError, discard_upload, remove_id_photo, remove_picture, store_id_photo, store_picture
 from routers.chats import tell_names
 from routers.companies import _for_deletion, can_edit, deletion_block, erase_company
 from presence import hub
-from system import (APP_NAME, BANK_VERIFY, CODE_ATTEMPTS, CODE_TTL_MIN, ID_VERIFY, MAX_SENDS, RESEND_COOLDOWN_S, FormError, ai_dir, code_hash, delivery_modes, end_session, flash,
+from system import (APP_NAME, BANK_VERIFY, CODE_ATTEMPTS, CODE_TTL_MIN, MAX_SENDS, RESEND_COOLDOWN_S, FormError, ai_dir, code_hash, delivery_modes, end_session, flash,
                     identity_digest, mask_email, mask_phone, new_code, new_password_hash, password_matches, render, seal, send_email, send_sms, unflash_saved, unseal)
 from tables import (ACCOUNT_TYPES, ID_COUNTRIES, ID_TYPES, MESSAGE_RETENTION_DAYS, REGIONS, ZONES, AccountRecovery, Approach, BankAccount, BlacklistedCredential, ChatMessage, Company, ContactChange, IdentityProof,
                     MeetingLine, Membership, MessageArchive, Profile, User, blacklisted, get_db, username_problem, utcnow)
@@ -39,7 +40,7 @@ async def settings_page(request: Request, db: AsyncSession = Depends(get_db)):  
                                         "owned": (await db.scalars(select(Company.name).where(Company.owner_id == _uid(request)).order_by(Company.name))).all(),
                                         "retention_days": MESSAGE_RETENTION_DAYS, "bank": await db.get(BankAccount, _uid(request)), "account_types": ACCOUNT_TYPES,
                                         "identity": await db.get(IdentityProof, _uid(request)), "id_types": ID_TYPES, "id_countries": ID_COUNTRIES, "bank_verify": BANK_VERIFY,
-                                        "id_verify": ID_VERIFY, "id_online": ONLINE, "region": request.state.user.get("region"), "timezone": request.state.user.get("tz"), "change_days": changelog.KEEP_DAYS})
+                                        "id_verify": idcheck.on(), "id_online": ONLINE if idcheck.on() and idcheck.cashfree_ready() else {}, "didit": idcheck.didit_ready(), "max_dob": adult_since().isoformat(), "region": request.state.user.get("region"), "timezone": request.state.user.get("tz"), "change_days": changelog.KEEP_DAYS})
 # ---------- account: change username / delete account, each only with the current password ----------
 async def _verified(db: AsyncSession, request: Request, password: str) -> User:
     uid = _uid(request)
@@ -129,6 +130,26 @@ async def cancel_contact(request: Request, form: ContactCodeForm = Depends(Conta
     await db.execute(delete(ContactChange).where(ContactChange.user_id == _uid(request), ContactChange.channel == form.channel)); await db.commit()
     flash(request, f"Cancelled: your {LABEL[form.channel]} stays as it was.", "info")
     return RedirectResponse("/settings#contact", 303)
+@router.post("/settings/dob")
+async def change_dob(request: Request, form: DobChangeForm = Depends(DobChangeForm.as_form), db: AsyncSession = Depends(get_db)):
+    """A date of birth can be changed once after signup (user's rule), with the password, 18+ as at signup; then it's locked for good. Only a change that really happens uses it up, and one
+    statement decides it, so two at once can't both pass. ID checks compared the old date, so a badge earned with it goes: it would claim something nobody checked."""
+    account = await _verified(db, request, form.password)
+    uid, name, email, phone, old = account.id, account.username, account.email, account.phone, account.dob
+    if not old: raise FormError("Add your date of birth on your profile first.")
+    if account.dob_changed_at: raise FormError(f"You've already used your one change of your date of birth ({account.dob_changed_at:%d %b %Y}): it's locked now.")
+    if form.dob == old: raise FormError("That's already your date of birth: nothing changed, and your one change is still there.")
+    if not (await db.execute(update(User).where(User.id == uid, User.dob_changed_at.is_(None)).values(dob=form.dob, dob_changed_at=utcnow()))).rowcount: raise FormError("You've already used your one change of your date of birth: it's locked now.")
+    had_badge = (await db.execute(update(IdentityProof).where(IdentityProof.user_id == uid, IdentityProof.verified_at.is_not(None)).values(verified_at=None, verified_by="", verified_name=""))).rowcount
+    await db.commit()
+    if had_badge: await tell_names(db, uid)  # the ✓ beside their name in chats goes too, live
+    await changelog.person(db, uid, name, "date of birth changed", f"{old:%Y-%m-%d} → {form.dob:%Y-%m-%d}, the one change after signup" + (" · its ID verification was cleared" if had_badge else ""))
+    note = f"Your {APP_NAME} date of birth was just changed. That was the one change allowed, so it's locked now. If this wasn't you, reset your password from the login page right away and tell support."
+    for send in (lambda: send_email(email, f"{APP_NAME}: your date of birth was changed", note), *((lambda: send_sms(phone, note),) if phone else ())):
+        try: await send()
+        except Exception as e: print(f"date of birth notice: {type(e).__name__}")
+    flash(request, f"Date of birth changed to {form.dob:%d %b %Y}: it's locked now." + (" Your ID was verified against the old date, so verify it again." if had_badge else ""), "success")
+    return RedirectResponse("/settings#contact", 303)
 @router.post("/settings/username")
 async def change_username(request: Request, form: UsernameForm = Depends(UsernameForm.as_form), db: AsyncSession = Depends(get_db)):
     account = await _verified(db, request, form.password)
@@ -203,14 +224,45 @@ async def save_identity(request: Request, form: IdentityForm = Depends(IdentityF
     before = {} if new else facts(proof.id_type, unseal(f"identity:{account.id}", proof.number_enc) or f"••••{proof.number_last4}", proof.name_on_id)
     proof.id_type, proof.name_on_id, proof.number_enc, proof.number_last4 = form.id_type, form.name_on_id, seal(f"identity:{account.id}", form.id_number), form.id_number[-4:]
     proof.verified_at, proof.verified_by, proof.verified_name = (utcnow(), checked["by"], checked["name"]) if checked else (None, "", "")
+    open_check, proof.check_session, proof.check_url, proof.check_started_at, proof.check_note, proof.photo_read_at = proof.check_session, "", "", None, "", None  # a new ID: any check of the old one is over
     db.add(proof)
     await db.commit()
+    await idcheck.forget(open_check)
+    if idcheck.on() and not checked and not idcheck.didit_ready(): idcheck.queue_person(account.id)  # no Didit: the local AI reads the photo
     after = facts(form.id_type, form.id_number, form.name_on_id)
     await changelog.person(db, account.id, account.username, "identity proof " + ("added" if new else "changed"),
                            (changelog.facts(after) if new else changelog.diff(before, after) or "saved again") + " · photo of it uploaded" + (f" · verified online: {checked['name']}" if checked else ""))
     await tell_names(db, account.id)  # the name on it is shown beside their username in chats: updated live
     flash(request, f"Identity proof {'saved' if new else 'updated'}: {ID_TYPES[form.id_type]} ending {form.id_number[-4:]}, with its photo"
           + (f", verified online ({checked['name']})." if checked else " (format and check digit checked)."), "success")
+    return RedirectResponse("/settings#identity", 303)
+@router.post("/settings/identity/check")
+async def check_identity(request: Request, form: IdentityCheckForm = Depends(IdentityCheckForm.as_form), db: AsyncSession = Depends(get_db)):
+    """Verify my ID: on Didit's page, or the local AI reads the saved photo when Didit isn't set up or its free checks ran out. Optional: nothing depends on it but the badge (the user's rule)."""
+    uid = _uid(request)
+    proof = await db.get(IdentityProof, uid)
+    if not proof: raise FormError("Save your identity proof first.")
+    if not idcheck.on(): raise FormError("ID checks are off right now.")
+    if proof.verified_at: raise FormError("Your ID is verified already.")
+    if not proof.check_session:
+        if rate_limited(f"id-check:{uid}", 5, 3600): raise FormError("That's a lot of checks for one hour: try again later.")
+        if idcheck.didit_ready():
+            if not form.consent: raise FormError("Tick that a photo of your ID and a selfie may go to Didit first.")
+            try:
+                await idcheck.start(uid)
+                flash(request, "Your check is ready: continue on Didit's page, then you'll come back here.", "info")
+                return RedirectResponse("/settings#identity", 303)
+            except idcheck.NoCredit: flash(request, "Didit's free checks have run out for this month, so the local AI is reading your ID photo instead: this page shows the outcome.", "info")
+            except idcheck.DiditError as e: raise FormError(f"Couldn't start the check: {e}") from None
+        else: flash(request, "The local AI is reading your ID photo: this page shows the outcome in a minute or two.", "info")
+        idcheck.queue_person(uid)
+    return RedirectResponse("/settings#identity", 303)
+@router.get("/settings/identity/checked")
+async def identity_checked(request: Request, db: AsyncSession = Depends(get_db)):
+    """Didit sends them back here. What the address says doesn't count: this server asks Didit itself, for the check that's on their own account."""
+    outcome = await idcheck.follow(_uid(request))
+    if outcome.startswith("Verified"): await tell_names(db, _uid(request))  # the ✓ beside their name in chats, live
+    flash(request, outcome or "Didit is still checking your ID: this page shows the outcome when it's done.", "success" if outcome.startswith("Verified") else "info")
     return RedirectResponse("/settings#identity", 303)
 @router.post("/settings/delete")
 async def delete_account(request: Request, form: DeleteAccountForm = Depends(DeleteAccountForm.as_form), db: AsyncSession = Depends(get_db)):

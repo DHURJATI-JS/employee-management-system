@@ -21,7 +21,7 @@ from guard import join_block
 from payroll import hours_label
 from routers.discover import pay_fit
 from system import AI_STATUS, APP_NAME
-from tables import CURRENCIES, DEFAULT_CURRENCY, FREELANCE, MAX_SALARY, MAX_WORK_HOURS, POSITIONS, TOP, Company, Membership
+from tables import CURRENCIES, DEFAULT_CURRENCY, FREELANCE, MAX_SALARY, MAX_WORK_HOURS, POSITIONS, TOP, Company, Membership, ai_name
 import grow
 FIND_TIMEOUT_S = 60  # the local AI's answer; slower than this: rules only
 label = lambda k: POSITIONS.get(k, {"label": k})["label"]
@@ -114,18 +114,18 @@ CHECKED = set(("pay pays paid payout payouts salary salaries usd inr eur gbp aud
                "companies company alongside parallel jobs job employers freelance freelancer freelancing contract hours hour weekend weekends days week location "
                "city country based role position manager promotion grow").split())
 async def read(prompt: str) -> tuple[dict, str]:
-    """(criteria, how it was read). Rules always; the local AI on top when it's up."""
+    """(criteria, how it was read). Rules always; the AI on top when it's up."""
     c = rules(prompt)
-    if not AI_STATUS.get("ready"): return c, f"rules only: {AI_STATUS.get('detail') or 'the local AI is offline'}"
+    if not AI_STATUS.get("ready"): return c, f"rules only: {AI_STATUS.get('detail') or 'the AI is offline'}"
     try: ai = _from_ai(await asyncio.to_thread(_ask, prompt), prompt)
     except Exception as e:
-        print(f"finder: local AI failed ({type(e).__name__}); rules only")
-        return c, "rules only: the local AI didn't answer in time" if "timeout" in type(e).__name__.lower() or "timed out" in str(e) else "rules only: the local AI couldn't read it"
+        print(f"finder: the AI failed ({type(e).__name__}); rules only")
+        return c, f"rules only: {ai_name()} didn't answer in time" if "timeout" in type(e).__name__.lower() or "timed out" in str(e) else f"rules only: {ai_name()} couldn't read it"
     for k in ("location", "position", "pays_in", "max_hours", "max_days", "weekends_off", "freelance", "other_companies", "salary"):
         if not c.get(k) and ai.get(k): c[k] = ai[k]  # rules win where both answer
     if ai["topic"]: c["topic"] = ai["topic"]  # the AI says the kind of work better than leftover words
     c["unsupported"] = ai["unsupported"]
-    return c, f"read by the local AI ({grow.VLLM_MODEL}) + rules"
+    return c, f"read by {ai_name()} ({grow.engine_model()}) + rules"
 # ---------- matching: plain code against each company's real data ----------
 def _near(asked: set[str], has: set[str]) -> list[str]:  # the company's words that match what was asked, typos forgiven ("pythion" -> python)
     return sorted({w for w in has if w in asked or (len(w) >= 4 and any(len(a) >= 4 and SequenceMatcher(None, a, w).ratio() >= 0.8 for a in asked))})[:6]

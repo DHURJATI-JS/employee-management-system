@@ -73,7 +73,7 @@
 <ul class="hx-meet-facts hx-gap-sm">
 <li><i class="fa-solid fa-bell"></i><span>everyone invited gets a notification and an email now, and a reminder 10 minutes before (the room opens then)</span></li>
 <li><i class="fa-solid fa-lock"></i><span>only they (and you) can join, while they're in {{ c.name }}; afterwards they and the owner, co-owners, managers and HR can open the record</span></li>
-<li><i class="fa-solid fa-closed-captioning"></i><span>captions by Whisper{{ '' if captions.ready else ' (off right now)' }}, translated to English, and AI notes: all on this server</span></li>
+<li><i class="fa-solid fa-closed-captioning"></i><span>captions by Whisper{{ '' if captions.ready else ' (off right now)' }}, translated to English, and AI notes{{ ' by Claude' if ai_name() == 'Claude' else ': all on this server' }}</span></li>
 </ul>
 </form>
 {% if closed %}<p class="hx-err-msg"><i class="fa-solid fa-moon"></i> It isn't working time at {{ c.name }} right now ({{ hours }}, or a holiday), so a meeting can't start now: you can still schedule one. Next chance to start one: <b>{{ next_open }}</b>.</p>{% endif %}

@@ -20,7 +20,7 @@ def _status(review) -> JSONResponse: return JSONResponse({"status": review.statu
 @router.post("/profile/review")
 async def review_profile(request: Request, _: ActionForm = Depends(ActionForm.as_form)):
     _can_start(request)
-    flash(request, "The AI is reading your profile, CV and picture: this takes a minute or two." if await start_review("u", _uid(request)) else "A review is already running.", "info")
+    flash(request, "The AI is reading your profile, CV and picture: this takes a minute or two." if await start_review("u", _uid(request), _uid(request)) else "A review is already running.", "info")
     return RedirectResponse("/profile#grow", 303)
 @router.get("/profile/review/status")
 async def profile_review_status(request: Request, db: AsyncSession = Depends(get_db)): return _status(await get_review(db, "u", _uid(request)))
@@ -37,7 +37,7 @@ async def company_grow(request: Request, company_id: uuid.UUID, db: AsyncSession
 async def review_company(request: Request, company_id: uuid.UUID, _: ActionForm = Depends(ActionForm.as_form), db: AsyncSession = Depends(get_db)):
     await _top(db, request, company_id)
     _can_start(request)
-    flash(request, "The AI is reviewing the company, its logo and the market: this takes a minute or two." if await start_review("c", company_id) else "A review is already running.", "info")
+    flash(request, "The AI is reviewing the company, its logo and the market: this takes a minute or two." if await start_review("c", company_id, _uid(request)) else "A review is already running.", "info")
     return RedirectResponse(f"/companies/{company_id}/grow", 303)
 @router.get("/companies/{company_id}/review/status")
 async def company_review_status(request: Request, company_id: uuid.UUID, db: AsyncSession = Depends(get_db)):

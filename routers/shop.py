@@ -237,7 +237,7 @@ async def pay_page(request: Request, ck: str, db: AsyncSession = Depends(get_db)
 async def pay_test(request: Request, ck: str, outcome: str, _: ActionForm = Depends(ActionForm.as_form), db: AsyncSession = Depends(get_db)):
     """Test mode only: "pay" or "fail" the pretend payment."""
     if pay_mode() != "test" or outcome not in ("pay", "fail"): raise HTTPException(404, "Not found.")
-    await _checkout(db, _uid(request), ck)
+    if any(o.status == "pending" and o.payment_provider != "test" for o in await _checkout(db, _uid(request), ck)): raise HTTPException(404, "Not found.")  # the switch can move while a real payment waits: a pretend one must never settle it
     n = await settle_checkout(db, ck, "PAID" if outcome == "pay" else "CANCELLED", f"TEST-{secrets.token_hex(4).upper()}")
     await db.commit()
     flash(request, (f"Test payment done: {n} order{'s' if n != 1 else ''} placed (no money moved)." if outcome == "pay" else "Test payment failed: the order is cancelled and its stock released."), "success" if outcome == "pay" else "info")
@@ -246,7 +246,7 @@ async def pay_test(request: Request, ck: str, outcome: str, _: ActionForm = Depe
 async def paid(request: Request, ck: str, db: AsyncSession = Depends(get_db)):
     """Cashfree sends the buyer back here: the link's status decides (the webhook / poller may have already)."""
     orders = await _checkout(db, _uid(request), ck)
-    if any(o.status == "pending" for o in orders) and pay_mode() == "cashfree":
+    if any(o.status == "pending" and o.payment_provider == "cashfree" for o in orders) and shop.cashfree_ready():
         try:
             if (status := await shop.link_status(ck)) in ("PAID", "EXPIRED", "CANCELLED"): await settle_checkout(db, ck, status); await db.commit()
         except PaymentError as e: flash(request, f"Couldn't check the payment yet ({e}): it's checked again every few minutes.", "info")
@@ -405,7 +405,7 @@ async def ask(request: Request, pid: int, form: AskForm = Depends(AskForm.as_for
     if q.ask_seller:
         await shop.want_task(db, p.company_id, f"question:{qid}", f"Answer a question about {p.title[:60]}", f"A shopper asked: “{form.question[:400]}”", 4)
     await db.commit()
-    if AI_STATUS.get("ready"): shopai.ask(qid)
+    if AI_STATUS.get("ready"): shopai.ask(qid, uid)
     if not wants_html(request) or request.headers.get("x-requested-with") == "fetch": return {"id": qid, "status": q.status}
     flash(request, "Asked: the answer appears below in a moment.", "info")
     return RedirectResponse(f"/shop/p/{pid}#ask", 303)

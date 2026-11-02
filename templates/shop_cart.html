@@ -18,7 +18,7 @@
 <b class="hx-cart-sum">{{ price(g.s.currency if g.s else 'INR', l.unit * l.ci.qty) }}</b></div>{% endfor %}
 <div class="hx-cart-total"><span>items {{ price(g.s.currency if g.s else 'INR', g.subtotal) }} · shipping {{ 'free' if not g.shipping else price(g.s.currency, g.shipping)|striptags }}</span><b>{{ price(g.s.currency if g.s else 'INR', g.subtotal + g.shipping) }}</b></div></div>
 </section>{% endfor %}
-<section class="hx-section hx-row-actions"><a href="/shop/checkout" class="hx-btn hx-btn-solid{{ ' hx-disabled' if not ok }}"{{ ' aria-disabled="true"'|safe if not ok }}><span>{{ 'check out' if ok else 'fix the items marked above first' }}</span><i class="fa-solid fa-arrow-right"></i></a>
+<section class="hx-section hx-row-actions">{% if pay == 'off' %}<span class="hx-err-msg"><i class="fa-solid fa-store-slash"></i> The shop isn't taking orders right now.</span>{% else %}<a href="/shop/checkout" class="hx-btn hx-btn-solid{{ ' hx-disabled' if not ok }}"{{ ' aria-disabled="true"'|safe if not ok }}><span>{{ 'check out' if ok else 'fix the items marked above first' }}</span><i class="fa-solid fa-arrow-right"></i></a>{% endif %}
 {% if pay == 'test' %}<span class="hx-hint hx-test-mode"><i class="fa-solid fa-flask"></i> test mode: no money moves</span>{% endif %}</section>
 {% else %}<section class="hx-section"><p class="hx-empty"><i class="fa-solid fa-cart-shopping"></i><span>Your cart is empty. <a href="/shop">Find something →</a></span></p></section>{% endif %}
 </div>{% endblock %}

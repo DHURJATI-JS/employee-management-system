@@ -12,7 +12,7 @@ they connect, and keeps everything else:
   recorded. When it stops, the whisper service re-indexes the file (remux) so players can seek.
 - rules: one live meeting per company (meetings_one_live), only invited members, the room opens OPEN_EARLY before the start and closes
   EMPTY_END_S after the last person leaves (back to "scheduled" while its slot lasts, else "ended"); a reminder REMIND before; anyone who
-  leaves the company is removed from the room within a minute. Being in a call counts as using the app (presence.hub: attendance).
+  leaves the company is removed from the room at once (out_of_company). Being in a call counts as using the app (presence.hub: attendance).
 In memory, like the presence hub: one process (uvicorn without workers)."""
 import asyncio, contextlib, hmac, io, json, os, secrets, shutil, time, urllib.request, weakref
 from collections import deque
@@ -392,13 +392,17 @@ class Rooms:
                 await db.commit()
                 audit.log("system", "meetings", f"meeting {room.id} ({room.title} · {room.company}) {'ended' if final else 'room closed (empty), back to scheduled'}")
         if final and AI_STATUS.get("ready"): ai.put(lambda: self.notes(room.id, final=True))
-    async def recheck(self, rooms: list[Room]) -> None:  # anyone who's left the company meanwhile is out of its meeting too (every live room in one query)
+    async def out(self, room: Room, peer: Peer) -> None:
+        await self.send([peer], {"t": "error", "detail": f"You're no longer in {room.company}, so you've left its meeting."})
+        with contextlib.suppress(Exception): await peer.ws.close(code=4403)
+    async def left(self, company_id, uid: int) -> None:  # they're out of the company: out of its call now
+        for room in [r for r in self.rooms.values() if r.company_id == company_id]:
+            for p in [p for p in room.peers.values() if p.uid == uid]: await self.out(room, p)
+    async def recheck(self, rooms: list[Room]) -> None:  # the safety net: anyone who's left the company meanwhile (every live room in one query)
         async with Session() as db: rows = (await db.execute(select(Membership.company_id, Membership.user_id).where(Membership.company_id.in_({r.company_id for r in rooms})))).all()
         inside = set(map(tuple, rows))
         for room in rooms:
-            for p in [p for p in room.peers.values() if (room.company_id, p.uid) not in inside]:
-                await self.send([p], {"t": "error", "detail": f"You're no longer in {room.company}, so you've left its meeting."})
-                with contextlib.suppress(Exception): await p.ws.close(code=4403)
+            for p in [p for p in room.peers.values() if (room.company_id, p.uid) not in inside]: await self.out(room, p)
     async def housekeeping(self) -> None:
         """Meetings "live" in the database whose room nobody keeps any more (no heartbeat for EMPTY_END_S: the server restarted; another
         app process sharing the database leaves the ones it holds alone), scheduled ones whose slot passed with nobody joining, and the
@@ -446,3 +450,5 @@ class Rooms:
             except Exception as e: print(f"meetings: {type(e).__name__}: {e}")
             await asyncio.sleep(TICK_S)
 rooms = Rooms()
+async def out_of_company(company_id, uid: int) -> None:  # they left, were removed or banned, or the company is gone: its live dashboards and its call end for them at once
+    await hub.left(uid, company_id); await rooms.left(company_id, uid)

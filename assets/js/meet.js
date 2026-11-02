@@ -415,6 +415,11 @@
     else if (a === "cc") { st.cc = !st.cc; if (!st.cc) caps.replaceChildren(); sync(); }
     else if (a === "rec") { if (rec.r) stopRec(true); else if (recOn.mine) send({ t: "rec", on: false }); else send({ t: "rec", on: true }); }
     else if (a === "chat" || a === "notes" || a === "people") open(a);
+    else if (a === "theme") {  // the same choice as the sidebar's button: saved in localStorage, theme.js applies it on every page
+      const page = document.documentElement, theme = page.dataset.mdbTheme === "dark" ? "light" : "dark";
+      page.dataset.mdbTheme = theme;
+      try { localStorage.setItem("theme", theme); } catch {}
+    }
     else if (a === "leave") { over = true; inCall = false; stopRec(true); setTimeout(() => { try { sock?.close(1000); } catch {} location.href = root.dataset.back; }, rec.r ? 800 : 50); }
     else if (a === "end" && b) {  // twice, so it's never by accident
       if (!armed.get(b)) { armed.set(b, true); b.querySelector("span").textContent = "sure? click again"; setTimeout(() => { armed.delete(b); b.querySelector("span").textContent = "end for all"; }, 3500); return; }
@@ -425,7 +430,7 @@
   $("[data-say]").addEventListener("submit", (e) => { e.preventDefault(); const i = $("[data-say-input]"), text = i.value.trim(); if (!text || !inCall) return; send({ t: "chat", text }); i.value = ""; });
   document.addEventListener("keydown", (e) => {
     if (!inCall || e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.("input, textarea, select, [contenteditable]")) return;
-    const k = { m: "mic", v: "cam", s: "share", h: "hand", c: "cc", t: "chat" }[e.key.toLowerCase()];
+    const k = { m: "mic", v: "cam", s: "share", h: "hand", c: "cc", t: "chat", d: "theme" }[e.key.toLowerCase()];
     if (k) { e.preventDefault(); act(k); }
   });
   addEventListener("beforeunload", (e) => { if (rec.r) { e.preventDefault(); e.returnValue = ""; } });

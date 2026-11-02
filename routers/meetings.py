@@ -25,7 +25,7 @@ from routers.chats import names
 from routers.tasks import next_open, viewer
 from system import AI_STATUS, APP_NAME, SESSION_COOKIE, FormError, _session_key, attachment, client_ip, flash, ip_blocked, own_origin, render, send_email
 import audit
-from tables import MEET_HOSTS, MEET_READERS, MESSAGE_RETENTION_DAYS, POSITIONS, TOP, Company, Meeting, MeetingInvite, MeetingLine, Membership, User, get_db, utcnow
+from tables import MEET_HOSTS, MEET_READERS, MESSAGE_RETENTION_DAYS, POSITIONS, TOP, Company, Meeting, MeetingInvite, MeetingLine, Membership, User, ai_name, get_db, utcnow
 router = APIRouter(tags=["meetings"])
 def _uid(request: Request) -> int: return int(request.state.user["user_id"])
 async def _meeting(db: AsyncSession, uid: int, meeting_id: int):
@@ -71,7 +71,7 @@ async def schedule(request: Request, company_id: uuid.UUID, form: MeetingForm = 
         mine = f"\nOn your clock: {theirs(s, zone):%a %d %b, %H:%M}–{theirs(e, zone):%H:%M %Z}." if zone and zone != tz_name(c) and theirs(s, zone) else ""
         try: await send_email(to, f"{'Meeting now' if form.now else 'Meeting'}: {title} ({cname})", f"Hi {who},\n\n{by} invited you to a video meeting at {cname}: “{title}”, {span}.{mine}\n"
                               + (f"\nAgenda:\n{form.agenda}\n" if form.agenda else "") + f"\nJoin it under Tasks in {APP_NAME} (the room opens 10 minutes before the start). "
-                              "It may be recorded, captioned and summarised by the local AI; the people invited and the company's owner, co-owners, managers and HR can open its record afterwards.\n")
+                              f"It may be recorded, captioned and summarised by {ai_name()}; the people invited and the company's owner, co-owners, managers and HR can open its record afterwards.\n")
         except Exception as ex: print(f"meeting email failed: {type(ex).__name__}")
     if form.now: return RedirectResponse(f"/meetings/{mid}/room", 303)
     flash(request, f"“{title}” scheduled for {span}: {len(people)} {'person' if len(people) == 1 else 'people'} invited, notified and emailed.", "success")
@@ -120,7 +120,7 @@ async def transcript(request: Request, meeting_id: int, db: AsyncSession = Depen
     known, zone = await names(db, {x.speaker_id for x in lines}), viewer(request)
     notes, out = notes_of(m), [f"{m.title} · {c.name}", _span(c, m), f"Scheduled by {m.created_by_name}" + (f"\nAgenda: {m.agenda}" if m.agenda else ""), ""]
     if notes:
-        out += ["NOTES (written by the local AI from the captions and chat: check them)", notes["summary"], *(f"- {p}" for p in notes["points"])]
+        out += ["NOTES (written by the AI from the captions and chat: check them)", notes["summary"], *(f"- {p}" for p in notes["points"])]
         out += ["Decisions:", *(f"- {d}" for d in notes["decisions"])] if notes["decisions"] else []
         out += ["Action items:", *(f"- {a['who']}: {a['what']}" for a in notes["actions"])] if notes["actions"] else []
         out.append("")

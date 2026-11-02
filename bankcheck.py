@@ -4,15 +4,16 @@ https://www.cashfree.com/docs/api-reference/vrs/v2/bav-v2/bank-account-verificat
 it's off, accounts are saved unverified and nothing is sent anywhere. An invalid account comes back as HTTP 200 with account_status
 INVALID; the holder's name must match the bank's at least moderately (name_match_result)."""
 import asyncio, json, re, urllib.error, urllib.request
-from system import BANK_VERIFY, CASHFREE_BASE_URL, CASHFREE_CLIENT_ID, CASHFREE_CLIENT_SECRET
+from apikeys import cashfree_check_url, key
+from system import BANK_VERIFY
 NAME_OK = ("DIRECT_MATCH", "GOOD_PARTIAL_MATCH", "MODERATE_PARTIAL_MATCH")
 WHY = {"INVALID_ACCOUNT_FAIL": "that account number doesn't exist at this bank", "ACCOUNT_BLOCKED": "that account is blocked",
        "INVALID_IFSC_FAIL": "the IFSC is wrong", "NRE_ACCOUNT_FAIL": "NRE accounts can't receive salaries"}
 class BankCheckError(Exception): pass
 def _cashfree(account: str, ifsc: str, name: str) -> dict:
-    if not (CASHFREE_CLIENT_ID and CASHFREE_CLIENT_SECRET): raise BankCheckError("Bank verification isn't set up on this server (CASHFREE_CLIENT_ID / CASHFREE_CLIENT_SECRET): try again later.")
+    if not (key("CASHFREE_CLIENT_ID") and key("CASHFREE_CLIENT_SECRET")): raise BankCheckError("Bank verification isn't set up on this server (CASHFREE_CLIENT_ID / CASHFREE_CLIENT_SECRET): try again later.")
     body = json.dumps({"bank_account": account, "ifsc": ifsc, "name": re.sub(r"[^\w\s./&-]", "", name)[:100]}).encode()  # the name chars Cashfree accepts
-    req = urllib.request.Request(CASHFREE_BASE_URL + "/bank-account/sync", body, {"Content-Type": "application/json", "x-client-id": CASHFREE_CLIENT_ID, "x-client-secret": CASHFREE_CLIENT_SECRET})
+    req = urllib.request.Request(cashfree_check_url() + "/bank-account/sync", body, {"Content-Type": "application/json", "x-client-id": key("CASHFREE_CLIENT_ID"), "x-client-secret": key("CASHFREE_CLIENT_SECRET")})
     try:
         with urllib.request.urlopen(req, timeout=30) as r: data = json.loads(r.read())
     except urllib.error.HTTPError as e:

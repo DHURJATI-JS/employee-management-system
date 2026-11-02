@@ -75,6 +75,13 @@ async def _people(db: AsyncSession, ids) -> dict[int, list[tuple[int, str]]]:  #
     for cid, u, name in (await db.execute(select(ChatMember.chat_id, User.id, User.username).join(User, User.id == ChatMember.user_id)
                                           .where(ChatMember.chat_id.in_(list(ids))).order_by(User.username))).all() if ids else []: out.setdefault(cid, []).append((u, name))
     return out
+async def told(db: AsyncSession, chat: Chat, people: list[tuple[int, str]], uid: int) -> list[int]:
+    """Who hears of a new message: everyone in the chat but its sender. Someone who left a company hears nothing more from its chats: they stay listed for when they come back, but they can't
+    open them. Who asked in an enquiry was never in the company, and stays in it."""
+    ids = [u for u, _ in people if u != uid]
+    if chat.company_id is None or not ids: return ids
+    inside = set((await db.scalars(select(Membership.user_id).where(Membership.company_id == chat.company_id, Membership.user_id.in_(ids)))).all())
+    return [u for u in ids if u in inside or (chat.kind == "enquiry" and str(u) == chat.direct_key)]
 async def names(db: AsyncSession, uids) -> dict[int, dict]:
     """{user id: {"username" (current: a rename shows everywhere at once), "real" (the name on their identity proof), "verified"}}."""
     rows = (await db.execute(select(User.id, User.username, IdentityProof.name_on_id, IdentityProof.verified_at).outerjoin(IdentityProof, IdentityProof.user_id == User.id)
@@ -249,7 +256,7 @@ async def send(request: Request, chat_id: int, form: ChatMessageForm = Depends(C
     title = name_of(chat, people, uid) if chat.kind in GROUPS else me
     company = (await db.get(Company, chat.company_id)).name if chat.company_id else None
     await db.commit()
-    await hub.tell([u for u, _ in people if u != uid], {"t": "chat", "chat": chat_id, "from": me, "title": title, "company": company, "kind": chat.kind})  # a nudge: the text is fetched, access-checked
+    await hub.tell(await told(db, chat, people, uid), {"t": "chat", "chat": chat_id, "from": me, "title": title, "company": company, "kind": chat.kind})  # a nudge: the text is fetched, access-checked
     if fetching(request): return {"ok": True, "id": msg.id}
     return RedirectResponse(f"/chats/{chat_id}#end", 303)
 async def _writable(db: AsyncSession, request: Request, chat_id: int) -> tuple[Chat, list[tuple[int, str]]]:  # you're in it, and nobody blocked anybody (personal); then spam.check_chat
@@ -272,7 +279,7 @@ async def _post(db: AsyncSession, request: Request, chat: Chat, people, body: st
     company = (await db.get(Company, chat.company_id)).name if chat.company_id else None
     mid = msg.id
     await db.commit()
-    await hub.tell([u for u, _ in people if u != uid], {"t": "chat", "chat": chat.id, "from": me, "title": name_of(chat, people, uid) if chat.kind in GROUPS else me, "company": company, "kind": chat.kind})
+    await hub.tell(await told(db, chat, people, uid), {"t": "chat", "chat": chat.id, "from": me, "title": name_of(chat, people, uid) if chat.kind in GROUPS else me, "company": company, "kind": chat.kind})
     return mid
 @router.post("/chats/{chat_id}/files")
 async def send_file(request: Request, chat_id: int, form: ChatFileForm = Depends(ChatFileForm.as_form), db: AsyncSession = Depends(get_db)):

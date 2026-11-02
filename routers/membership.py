@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from form import ActionForm, DecisionForm, ReasonForm, TransferAnswerForm, TransferForm
 from guard import halted_reason, join_block, no_room, notify
+from meet import out_of_company
 from payroll import approved_leaves, pay_rows, unsettled
 from routers.companies import _limits_ok, can_edit, can_manage, label, missing_kyc, other_companies_rule
 from routers.leave import JOIN_APPROVERS, can_decide
@@ -66,6 +67,7 @@ async def decide(request: Request, request_id: int, form: DecisionForm = Depends
     got = await notify(db, [person], c, "info" if r.status == "approved" else "warn", f"Request to {what} {cname} {r.status}", text, link if r.status == "approved" and r.kind == "join" else "/dashboard",
                        f"member-request:{r.id}")
     await db.commit()
+    if r.status == "approved" and r.kind == "exit": await out_of_company(cid, r.user_id)
     if got:
         try: await send_email(email, f"Your request to {what} {cname} was {r.status}", f"Hi {name},\n\n{text}\n\nThis is an automatic message from {APP_NAME}.\n")
         except Exception as e: print(f"membership email failed: {type(e).__name__}")
@@ -99,6 +101,7 @@ async def remove_member(request: Request, company_id: uuid.UUID, user_id: int, f
     await db.execute(update(MemberRequest).where(MemberRequest.company_id == company_id, MemberRequest.user_id == user_id, MemberRequest.kind == "exit", MemberRequest.status == "pending").values(status="approved", decided_by=by, decided_at=utcnow()))
     got = await notify(db, [person], c, "warn", f"You were removed from {cname}", text, "/statements", f"removed:{company_id}:{user_id}:{utcnow():%Y%m%d%H%M%S}")
     await db.commit()
+    await out_of_company(company_id, user_id)
     changelog.company(company_id, "member removed", f"{name}, by {by}" + (f": {form.reason}" if form.reason else "")); changelog.add("u", user_id, f"removed from {cname}", f"by {by}" + (f": {form.reason}" if form.reason else ""))
     if got:
         try: await send_email(email, f"You were removed from {cname}", f"Hi {name},\n\n{text}\n\nThis is an automatic message from {APP_NAME}.\n")

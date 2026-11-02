@@ -4,7 +4,7 @@
 
 <p align="center">
   <b>Hiring, attendance, payroll, tasks, video meetings, chats and a marketplace in one app.</b><br>
-  It runs on your own machine, with a local AI, so company data stays there.
+  It runs on your own machine, with a local AI so company data stays there, or Claude if you switch it on with your own key.
 </p>
 
 <p align="center">
@@ -20,6 +20,7 @@
 <p align="center">
   <a href="#-quick-start"><b>Quick start</b></a> &nbsp;·&nbsp;
   <a href="#-what-it-does"><b>What it does</b></a> &nbsp;·&nbsp;
+  <a href="#-ai-id-checks-and-payments"><b>AI, IDs, payments</b></a> &nbsp;·&nbsp;
   <a href="#-load-test-results"><b>Load test</b></a> &nbsp;·&nbsp;
   <a href="#-how-it-fits-together"><b>How it fits together</b></a> &nbsp;·&nbsp;
   <a href="#-security"><b>Security</b></a> &nbsp;·&nbsp;
@@ -78,7 +79,7 @@ Your browser opens at <http://127.0.0.1:8000> when the app is ready. Close the `
 - **The local AI** needs an AMD or NVIDIA graphics card with about 16 GB of memory, a current driver, and about 60 GB of free disk space. Without those, the app runs with its AI buttons turned off.
 - **Sign-up codes:** until you set up SMTP and Twilio, they're printed in the `start.cmd` window.
 - **Maps:** creating a company needs a free [Geoapify](https://www.geoapify.com/) key in `.env`.
-- **Admin console:** it stays off until you set `ADMIN_USERNAME` and `ADMIN_PASSWORD` in `.env`.
+- **Admin console:** it stays off until you set `ADMIN_USERNAME` and `ADMIN_PASSWORD` in `.env`. It's also where you switch the AI, ID checks and payments, and paste their keys.
 - **Use `git clone`, not a ZIP.** Windows treats files from a ZIP as downloaded from the internet and may refuse to run `start.cmd`.
 
 ## ✨ What it does
@@ -90,9 +91,11 @@ Your browser opens at <http://127.0.0.1:8000> when the app is ready. Close the `
       <ul>
         <li>Sign-up with email and SMS codes, and an 18+ check</li>
         <li>Positions, joining and leaving approvals, and job offers</li>
+        <li>Requests nobody answers in 30 days are declined by the system, which says so</li>
+        <li>An ID checker for people and companies from any country, shown as a badge, that can be switched off</li>
         <li>An employee limit each company sets, which only its owner and co-owners can see</li>
         <li>Company search by meaning, CV reading and an AI company finder</li>
-        <li>Single company mode, where the whole site runs for one company</li>
+        <li>Single company mode, where the whole site runs for one company and the home page says so, with a button to it</li>
       </ul>
     </td>
     <td width="50%" valign="top">
@@ -113,6 +116,7 @@ Your browser opens at <http://127.0.0.1:8000> when the app is ready. Close the `
         <li>Salary cycles and payslips</li>
         <li>Payments recorded in any currency at the day's rate</li>
         <li>A payroll guard that warns a company, then halts it, if it owes staff more than it has</li>
+        <li>A company halts if its owner isn't online for 7 days in a row, alerts everyone, and resumes when they're back</li>
         <li>Salary money never moves through the app: companies pay from their own bank and record it here</li>
       </ul>
     </td>
@@ -120,7 +124,7 @@ Your browser opens at <http://127.0.0.1:8000> when the app is ready. Close the `
       <h3>💬 Talk</h3>
       <ul>
         <li>Company and personal chats with files, and a profile one click from any name</li>
-        <li>Video meetings with screen sharing, recording, live English captions and AI notes</li>
+        <li>Video meetings with screen sharing, recording, live English captions, AI notes and a theme switch mid-call</li>
         <li>Deminic AI, an assistant that streams answers, reads pictures and can search the web</li>
         <li>Nine languages: English, Hindi, Arabic, German, French, Dutch, Spanish, Italian and Chinese</li>
       </ul>
@@ -133,18 +137,47 @@ Your browser opens at <http://127.0.0.1:8000> when the app is ready. Close the `
         <li>A promotion review that can be off, suggest people, or promote by itself</li>
         <li>"Who's best for this task?", ranked from CVs, reviews and work history</li>
         <li>Growth reviews for profiles and companies</li>
+        <li>One switch for every AI feature: local (vLLM) or online (Claude, with your own key)</li>
       </ul>
     </td>
     <td width="50%" valign="top">
       <h3>🛒 Shop</h3>
       <ul>
-        <li>Storefront, search, cart and checkout, with test payments or Cashfree</li>
+        <li>Storefront, search, cart and checkout, with one switch: off, cash on delivery only, test payments, or Cashfree</li>
         <li>Order tracking, delivery codes, returns and buyer reviews</li>
         <li>An AI shopping assistant, review summaries, competitor price tracking and AI-assigned shop tasks</li>
       </ul>
     </td>
   </tr>
 </table>
+
+## 🔌 AI, ID checks and payments
+
+All three are switched in the admin console, under **services**. Paste a key there with your admin password and it's tried for real, saved to `.env` only if it works, and never shown again. No restart needed.
+
+| | Choices | What's free | Keys |
+|---|---|---|---|
+| 🧠 **AI** | **Local:** vLLM with Gemma 3 12B on your graphics card.<br>**Online:** Claude. | Local is free. Claude is paid per use by your key. | [Anthropic API key](https://console.anthropic.com/) |
+| 🪪 **ID checker** | **Off:** format and check digit only, nothing is sent anywhere.<br>**On:** every check below that's set up. | See below. | Didit and Companies House are optional |
+| 💳 **Payments** | **Off:** no orders at all.<br>**COD:** cash on delivery only.<br>**Test:** pretend payments.<br>**Online:** Cashfree. | No gateway is free per payment. Cashfree has no setup or monthly fee, about 1.95% + GST a payment. | [Cashfree](https://www.cashfree.com/) payment keys |
+
+**What the ID checker covers**
+
+| ID | Check | Cost |
+|---|---|---|
+| Anyone's ID, 220+ countries | [Didit](https://didit.me/): ID photo and a selfie, on Didit's own page | About 30 full checks a month free, then it stops and charges nothing. Sign-up needs a work email |
+| Anyone's ID, when Didit can't | The local AI reads the saved photo and code compares the number and name. The photo must show a face or an official emblem, so typed text doesn't pass. It can't spot a forgery, and the badge says so | Free |
+| PAN, Indian driving licence, voter ID | Cashfree, by number | Paid per check, only with its keys |
+| EU VAT number | [VIES](https://ec.europa.eu/taxation_customs/vies/) | Free, no key |
+| UK company number | [Companies House](https://developer.company-information.service.gov.uk/) | Free key |
+| Any company number | [GLEIF](https://www.gleif.org/), for companies with an LEI | Free, no key |
+| GSTIN, CIN, EIN | No free official check: format and check digit, plus GLEIF and the photo | Free |
+
+The check is a badge, not a gate: nobody is stopped from joining, and owners and HR see how far each ID got. ID photos never go to Claude, whichever mode the AI is in.
+
+With the AI online, what it reads goes to Anthropic: profiles, CVs, chats with Deminic, meeting captions and company details. The terms pages say so while it's on. Captions, embeddings and translations stay on your computer either way. If the key stops working the AI shows as offline, and it never moves to the other engine by itself. Claude also has a monthly limit you set in the console, $20 to start with: past it the AI goes offline until next month. The app counts this itself from each answer, so Anthropic's bill is the real number.
+
+If someone goes offline or closes their last tab, whatever the AI is doing for them stops 15 seconds later, on either engine, and it still counts towards their limits. Moving between pages doesn't stop it, and neither does closing one tab while another is open. Work nobody is waiting for carries on: ID checks, meeting captions and notes, and the daily jobs.
 
 ## 📈 Load test results
 
@@ -200,7 +233,7 @@ It passed three of the four. The owner reviewed the result at 200 people and acc
 |---:|---:|---:|---:|---:|---:|---:|---:|
 | 6,000 | 240 | 140 | 4,275 | 19,979 | 14,311 | 83,124 | 2,369 |
 
-**The computer.** One PC ran the app, the database, the AI and Locust together: an Intel Core i7-12700F (12 cores, 20 threads), 48 GB of memory and an AMD Radeon RX 9060 XT. The app ran as one worker process.
+**The computer.** One PC ran the app, the database, the AI and Locust together: an Intel Core i7-12700F (12 cores, 20 threads), 48 GB of memory and an AMD Radeon RX 9060 XT (16 GB). The app ran as one worker process.
 
 **The AI.** Answers ran on the graphics card through vLLM, up to 8 at once, while the website kept serving everyone else. The median answer took 24.8 s, counted from the question to its last word, including its wait in the queue.
 
@@ -225,16 +258,22 @@ flowchart TB
         W[Whisper<br/>live captions]
         T[LibreTranslate<br/>other languages]
     end
+    A -.-> Outside
+    subgraph Outside [Only if you switch them on]
+        L[Claude<br/>the online AI]
+        D[Didit, VIES, GLEIF,<br/>Companies House<br/>ID checks]
+        F[Cashfree<br/>payments]
+    end
 ```
 
-The app runs on your computer and its services run beside it in Docker, all answering on `127.0.0.1` only. If an optional service is down, the app keeps working and turns off what needs it.
+The app runs on your computer and its services run beside it in Docker, all answering on `127.0.0.1` only. If an optional service is down, the app keeps working and turns off what needs it. Nothing reaches the outside services until you switch them on.
 
 | Part | Built with |
 |---|---|
 | **Backend** | Python 3.15, FastAPI, Uvicorn, async SQLAlchemy, asyncpg |
 | **Data** | PostgreSQL 17 with pgvector, Redis 7 (login sessions only) |
 | **Frontend** | Jinja templates, MDB UI Kit, Font Awesome, Leaflet, Chart.js |
-| **Local AI** | vLLM running Gemma 3 12B on the graphics card |
+| **AI** | vLLM running Gemma 3 12B on the graphics card, or Claude online |
 | **Captions** | faster-whisper (large-v3-turbo) |
 | **Translation** | LibreTranslate |
 | **File safety** | ClamAV |
@@ -265,6 +304,8 @@ The app runs on your computer and its services run beside it in Docker, all answ
 - **Abuse:** spam protection for chats and both AI assistants, and an admin console with bans and an IP blocklist
 - **Database:** the app runs on a login that can only read and write rows
 - **Network:** Redis has a password, and every service answers on this computer only
+- **Staying up:** on Windows the server runs on a repaired event loop, so hundreds of open connections or a client hanging up at the wrong moment can't stop it (`winloop.py`)
+- **Keys:** kept in `.env`, tried before they're saved, and never shown again
 
 ## ⚙️ Configuration
 
@@ -276,13 +317,15 @@ Every setting is in [`.env.example`](.env.example), with a note on what it does.
 | `CONTACT_EMAIL`, `OWNER_NUMBER` | How people reach the owner, shown on the site |
 | `PORT` | The port the app listens on (change `PUBLIC_URL` with it) |
 | `MAX_COMPANIES_PER_ACCOUNT` | How many companies one account can own at a time |
+| `OWNER_AWAY_DAYS` | Days an owner can be away before their companies halt (7) |
+| `REQUEST_WINDOW_DAYS` | Days before an unanswered request to join or leave is declined (30) |
 | `CYCLE_DAYS` | How often salaries are paid, in days |
 | `GEOAPIFY_API_KEY`, `GEOAPIFY_SERVER_KEY` | Maps, needed to create a company |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Turns on the admin console |
-| `PAYMENTS` | `test`, `cashfree`, or `off` for cash on delivery only |
+| `AI_MODE`, `ID_VERIFY`, `PAYMENTS` | Where the admin console's switches start. Once a switch is used, it decides |
 | `VLLM_GPU` | `amd`, `nvidia` or `none`. Double-click `start.cmd` again after changing it |
 
-Restart the app after changing `.env`.
+Restart the app after changing `.env`, except for keys pasted in the admin console, which work at once.
 
 > [!CAUTION]
 > **Keep `.env` safe, and don't change `SECRET_KEY`.** A new key makes saved bank and ID numbers unreadable and hides saved pictures. Your `.env` is ignored by Git and never leaves your computer.
@@ -295,12 +338,16 @@ Restart the app after changing `.env`.
 start.cmd            One click: installs what's missing and starts everything
 setup_services.ps1   What start.cmd runs: installs, starts Docker and the services
 app.py               Starts the app and its background jobs
+winloop.py           The repaired Windows event loop the server runs on
 system.py            Config, security, sessions, templates, asset build
 tables.py            Database models and migrations
 form.py              Form models and validation
+apikeys.py           The outside services' keys, read from .env
 routers/             Pages and API endpoints
-payroll.py, guard.py Salaries and the payroll guard
-deminic.py, grow.py  The AI assistant and AI reviews
+payroll.py, guard.py Salaries, the payroll guard, owners away, requests nobody answered
+idcheck.py           The ID checker
+deminic.py, grow.py  The AI assistant, AI reviews and the AI engine
+aijobs.py            Stops AI work when the person it's for has gone
 companyai.py         Promotions and task allotment
 shop.py, shopai.py   The marketplace and its AI
 meet.py, presence.py Video meetings and live attendance
@@ -358,6 +405,9 @@ powershell -ExecutionPolicy Bypass -File .\setup_services.ps1
 
 - One app process only: rate limits, spam limits, live sockets and the AI queue are held in its memory.
 - Cashfree payments and refunds have only been tested against a stand-in server built from Cashfree's documentation, never with real money.
+- Claude, Didit and Companies House have only been tested against stand-in servers built from their documentation, never with real keys.
+- The local AI's ID photo check has only been tested on drawn cards, never on real IDs.
+- If an owner never comes back, their company stays halted until the admin deletes it.
 - The NVIDIA option, the AI's model download on a fresh install, and the WSL and Docker Desktop install steps haven't been tested on a fresh PC.
 - The load test above ran before the latest round of fixes.
 - The test scripts aren't in this repository.

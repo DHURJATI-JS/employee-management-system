@@ -66,9 +66,9 @@ def guest_only(endpoint):
             return RedirectResponse("/admin", 303)
         return await endpoint(*args, **kwargs)
     return wrapper
-def _single_company() -> bool:
+def _switches() -> tuple:
     from tables import SITE
-    return SITE["single_company"]
+    return tuple(SITE.values())
 def _lang_version(request: Request) -> int:  # a cached page is redone once more of its language has been translated
     import i18n
     return i18n._version.get(i18n.lang_of(request), 0)
@@ -92,7 +92,7 @@ class PageCache:
                 user = getattr(request.state, "user", None) or {}
                 key = (request.url.netloc, endpoint.__module__, endpoint.__qualname__, request.url.path, request.url.query,  # host first: no cross-host reuse
                        tuple(sorted(user.items())), tuple(build_assets().values()), AI_STATUS["ready"],  # + the AI status: the sidebar shows it
-                       request.cookies.get("hx_lang", ""), _lang_version(request), _single_company())  # + the page's language (i18n.py), its translations so far, and the admin's switch (the sidebar locks show it)
+                       request.cookies.get("hx_lang", ""), _lang_version(request), _switches())  # + the page's language (i18n.py), its translations so far, and the admin's switches (the sidebar locks show them, the pages name the AI)
                 now = time.monotonic()
                 if (hit := self.store.get(key)) and hit[0] > now:
                     return HTMLResponse(hit[1].replace(self.NONCE, request.state.nonce).replace(self.CSRF, csrf_token(request)), hit[2], headers={"X-Cache": "HIT"})

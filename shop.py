@@ -4,9 +4,10 @@ items, fixed when ordered, earned once an order is delivered and paid: "a succes
 order's life (placed -> packed -> shipped -> out for delivery -> delivered, or cancelled / returned) with the buyer told at every step
 (bell + live on their open tabs + email), couriers + tracking links, the delivery code, product + review media on disk, and search +
 similar products (pgvector).
-Payments (PAYMENTS in .env): "test" = a pretend checkout page, no money moves (development); "cashfree" = Cashfree payment links (the
-buyer pays on Cashfree's page, we check the link's status on return, by webhook and every few minutes: docs
-https://www.cashfree.com/docs/api-reference/payments/latest/payment-links/create, API version 2026-01-01); "off" = cash on delivery only.
+Payments (the admin console's switch; PAYMENTS in .env is where it starts): "off" = no orders at all; "cod" = cash on delivery only; "test" = a pretend checkout page, no money moves (development);
+"cashfree" = Cashfree payment links (the buyer pays on Cashfree's page, we check the link's status on return, by webhook and every few minutes: docs
+https://www.cashfree.com/docs/api-reference/payments/latest/payment-links/create, API version 2026-01-01), cash on delivery too where the seller offers it. Keys that stop being there don't
+strand anyone: without them checkout falls back on cash on delivery, and a payment already under way is followed whatever the switch says now (its money, its refund).
 Online money is collected by the platform, which pays sellers their sales minus its commission; cash on delivery is collected by the
 seller, who owes the platform its commission. ledger() keeps the balance; platform admins record settlements (routers/shopadmin.py)."""
 import asyncio, base64, contextlib, hmac, json, os, re, secrets, urllib.error, urllib.request, uuid
@@ -19,17 +20,15 @@ from jinja2 import pass_context
 from markupsafe import Markup, escape
 from sqlalchemy import Float, Integer, case, column, false, func, literal_column, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from apikeys import cashfree_pg_url, key
 from assist import STOPWORDS, content_vector, set_embedding
 from fx import convert
 from guard import notify, notify_many
 from presence import hub
 from system import APP_NAME, MEDIA_KEY, PLATFORM_ADMINS, UPLOAD_DIR, same_text, seal, send_email, templates, unseal
-from tables import (CURRENCIES, REGIONS, SHOP_CATEGORIES, SHOP_MANAGERS, Address, CartItem, Company, Membership, Order, OrderItem, Product, ProductReview, Settlement, Shop, ShopStaff,
+from tables import (CURRENCIES, REGIONS, SHOP_CATEGORIES, SHOP_MANAGERS, SITE, Address, CartItem, Company, Membership, Order, OrderItem, Product, ProductReview, Settlement, Shop, ShopStaff,
                     ShopTask, TrackingEvent, User, utcnow)
 COMMISSION_PERCENT = Decimal(os.getenv("SHOP_COMMISSION_PERCENT", "5")).quantize(Decimal("0.01"))  # the platform's cut of every successful sale
-PAYMENTS = os.getenv("PAYMENTS", "test").strip().lower()  # test / cashfree / off (cash on delivery only)
-CASHFREE_PG_ID, CASHFREE_PG_SECRET = os.getenv("CASHFREE_PG_CLIENT_ID", ""), os.getenv("CASHFREE_PG_CLIENT_SECRET", "")
-CASHFREE_PG_URL = (os.getenv("CASHFREE_PG_URL") or ("https://api.cashfree.com/pg" if os.getenv("CASHFREE_PG_ENV", "sandbox") == "production" else "https://sandbox.cashfree.com/pg")).rstrip("/")
 CASHFREE_API_VERSION = "2026-01-01"
 PUBLIC_URL = os.getenv("PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/")  # where buyers come back to after paying (and webhooks, when it's https)
 PAY_WINDOW =timedelta(minutes=int(os.getenv("SHOP_PAY_MINUTES", "30")))  # an online order unpaid this long is cancelled and its stock released
@@ -55,9 +54,9 @@ STATUS_LABEL = {"pending": "awaiting payment", "placed": "placed", "packed": "pa
 ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"  # order numbers: no 0/O or 1/I to misread
 class ShopError(Exception): pass
 EMPTY_CART = "Your cart is empty."
-def pay_mode() -> str:  # how online payment works right now
-    if PAYMENTS == "cashfree": return "cashfree" if CASHFREE_PG_ID and CASHFREE_PG_SECRET else "off"
-    return "test" if PAYMENTS == "test" else "off"
+def cashfree_ready() -> bool: return bool(key("CASHFREE_PG_CLIENT_ID") and key("CASHFREE_PG_CLIENT_SECRET"))
+def pay_mode() -> str: return "cod" if SITE["payments"] == "cashfree" and not cashfree_ready() else SITE["payments"]  # how checkout works right now: off / cod / test / cashfree
+def pays_online() -> bool: return pay_mode() in ("test", "cashfree")
 # ---------- money: minor units, tax included ----------
 def to_minor(v) -> int: return int((Decimal(str(v)) * 100).to_integral_value(ROUND_HALF_UP))
 def major(minor: int) -> Decimal: return (Decimal(minor) / 100).quantize(Decimal("0.01"))
@@ -310,8 +309,9 @@ async def place(db: AsyncSession, buyer: User, address: Address, method: str) ->
     """Check out the buyer's cart: one order per company (its own shipping, the platform's commission fixed now), stock reserved (rows
     locked, in id order: two checkouts can't oversell), the cart emptied. Cash on delivery orders are placed at once; online ones wait for
     the payment (PAY_WINDOW). Returns (checkout number, orders). ShopError says what's wrong."""
+    if pay_mode() == "off": raise ShopError("The shop isn't taking orders right now: your cart stays as it is.")
     await db.execute(select(User.id).where(User.id == buyer.id).with_for_update(key_share=True))  # one checkout per person at a time, and only then read the cart: two at once (a double click, two tabs) read the same cart and placed the same order twice (the race test: 8 orders from 8 clicks)
-    rows = (await db.execute(select(CartItem, Product).join(Product, Product.id == CartItem.product_id).where(CartItem.user_id == buyer.id).order_by(Product.id).with_for_update(of=Product))).all()
+    rows =(await db.execute(select(CartItem, Product).join(Product, Product.id == CartItem.product_id).where(CartItem.user_id == buyer.id).order_by(Product.id).with_for_update(of=Product))).all()
     if not rows: raise ShopError(EMPTY_CART)
     groups: dict = {}
     for ci, p in rows: groups.setdefault(p.company_id, []).append((ci, p))
@@ -322,7 +322,7 @@ async def place(db: AsyncSession, buyer: User, address: Address, method: str) ->
             if why := line_problem(p, shops.get(cid), companies[cid], ci.qty): raise ShopError(f"{p.title}: {why}. Update your cart, then check out again.")
     if method == "cod" and (no := [companies[cid].name for cid in groups if not shops[cid].cod]): raise ShopError(f"{', '.join(no)} doesn't offer cash on delivery: pay online, or buy from it separately.")
     if method == "online":
-        if pay_mode() == "off": raise ShopError("Online payment is off right now: choose cash on delivery.")
+        if not pays_online(): raise ShopError("Online payment is off right now: choose cash on delivery.")
         if len({shops[cid].currency for cid in groups}) > 1: raise ShopError("Your cart has shops pricing in different currencies: one online payment can't cover them. Check out each currency separately.")
     ship, checkout, orders, made, low = address_data(address), new_number("CK"), [], [], []
     for cid, lines in groups.items():
@@ -359,9 +359,9 @@ def hook_signed(secret: str, timestamp: str, raw: bytes, signature: str) -> bool
 class PaymentError(Exception):
     code = 0  # the service's HTTP status (0 = it couldn't be reached)
 def _cashfree(method: str, path: str, body: dict | None = None, idempotency: str | None = None) -> dict | list:
-    headers = {"Content-Type": "application/json", "Accept": "application/json", "x-client-id": CASHFREE_PG_ID, "x-client-secret": CASHFREE_PG_SECRET,
+    headers = {"Content-Type": "application/json", "Accept": "application/json", "x-client-id": key("CASHFREE_PG_CLIENT_ID"), "x-client-secret": key("CASHFREE_PG_CLIENT_SECRET"),
                "x-api-version": CASHFREE_API_VERSION, **({"x-idempotency-key": idempotency} if idempotency else {})}
-    req = urllib.request.Request(CASHFREE_PG_URL + path, json.dumps(body).encode() if body is not None else None, headers, method=method)
+    req = urllib.request.Request(cashfree_pg_url() + path, json.dumps(body).encode() if body is not None else None, headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=25) as r: return json.loads(r.read())
     except urllib.error.HTTPError as e:
@@ -371,6 +371,13 @@ def _cashfree(method: str, path: str, body: dict | None = None, idempotency: str
         err.code = e.code
         raise err from None
     except (OSError, ValueError): raise PaymentError("couldn't reach the payment service: try again shortly") from None
+def try_cashfree(client_id: str, secret: str, url: str) -> str:
+    """"" if Cashfree's payments take these keys, else why not: a look at a payment link that doesn't exist, which it answers 404 once it's past the keys. Nothing is created or charged."""
+    req = urllib.request.Request(url + "/links/deminic-key-check", headers={"Accept": "application/json", "x-client-id": client_id, "x-client-secret": secret, "x-api-version": CASHFREE_API_VERSION})
+    try:
+        with urllib.request.urlopen(req, timeout=20): return ""
+    except urllib.error.HTTPError as e: return "" if e.code == 404 else "Cashfree refused those keys." if e.code in (401, 403) else f"Cashfree answered {e.code}: try again in a moment."
+    except (OSError, ValueError): return "Couldn't reach Cashfree: check this server's internet connection."
 def _phone(p: str) -> str: return p[3:] if p.startswith("+91") and len(p) == 13 else p.lstrip("+")  # Cashfree's examples are 10-digit Indian numbers
 async def payment_link(checkout: str, amount_minor: int, currency: str, purpose: str, buyer: User) -> str:
     """A Cashfree payment link for one checkout (link_id = the checkout number, so it can't be paid twice); returns its URL."""
@@ -397,8 +404,8 @@ async def refund_status(o: Order) -> dict:
     body = {"refund_amount": float(major(o.total_minor)), "refund_id": rid, "refund_note": f"Order {o.number} {o.status}"[:100], "refund_speed": "STANDARD"}
     return await asyncio.to_thread(_cashfree, "POST", f"/orders/{paid}/refunds", body, str(uuid.uuid5(uuid.NAMESPACE_URL, f"cashfree-refund:{rid}")))
 def cashfree_signed(raw: bytes, timestamp: str, signature: str) -> bool:  # base64(HMAC-SHA256(client secret, timestamp + raw body)) == x-webhook-signature (Cashfree's docs)
-    if not (CASHFREE_PG_SECRET and timestamp and signature): return False
-    want = base64.b64encode(hmac.new(CASHFREE_PG_SECRET.encode(), timestamp.encode() + raw, "sha256").digest()).decode()
+    if not ((secret := key("CASHFREE_PG_CLIENT_SECRET")) and timestamp and signature): return False
+    want = base64.b64encode(hmac.new(secret.encode(), timestamp.encode() + raw, "sha256").digest()).decode()
     return same_text(want, signature)
 async def settle_checkout(db: AsyncSession, checkout: str, status: str, ref: str = "") -> int:
     """Apply a payment outcome to every order of a checkout ("PAID" -> confirmed; EXPIRED / CANCELLED -> cancelled, stock back). Returns

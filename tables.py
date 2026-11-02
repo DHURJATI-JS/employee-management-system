@@ -1,5 +1,6 @@
-import re, uuid
+import os, re, threading, uuid
 from datetime import UTC, date, datetime, time, timedelta
+from types import SimpleNamespace
 from decimal import Decimal
 from ipaddress import IPv4Address, IPv6Address
 from sqlalchemy import ARRAY, BigInteger, CheckConstraint, ForeignKey, Index, LargeBinary, Numeric, SmallInteger, String, UniqueConstraint, bindparam, cast, delete, func, or_, select, text, update
@@ -7,7 +8,7 @@ from sqlalchemy.dialects.postgresql import INET, JSONB, aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, aliased, mapped_column, relationship
 from sqlalchemy.pool import NullPool
-from system import ADMIN_DATABASE_URL, APP_NAME, CYCLE_DAYS, CYCLE_EVERY, DATABASE_URL, DEFAULT_PHONE_REGION, PLATFORM_ADMINS, POSTGRES_SSL, chat_file, identity_digest, remove_chat_files, templates
+from system import ADMIN_DATABASE_URL, AI_STATUS, APP_NAME, CYCLE_DAYS, CYCLE_EVERY, DATABASE_URL, DEFAULT_PHONE_REGION, ID_VERIFY, OWNER_AWAY_DAYS, PLATFORM_ADMINS, POSTGRES_SSL, REQUEST_WINDOW_DAYS, chat_file, identity_digest, remove_chat_files, templates
 # ---------- async engine (runs as the least-privilege app role) ----------
 _CONNECT = {"command_timeout": 15, "server_settings": {  # Postgres kills anything stuck, so one bad query can't hang the app or hold locks
     "application_name": re.sub(r"[^\w-]", "", APP_NAME)[:48] or "app", "statement_timeout": "15000", "lock_timeout": "5000",
@@ -66,11 +67,13 @@ STANDARD_TERMS = [  # what joining any company here means: shown with the compan
     ("fa-user-clock", "Attendance", f"As staff, whether you're active in {APP_NAME} during the company's working hours is recorded: nothing you type or view. "
                                      "Freelancers, owners and co-owners aren't monitored."),
     ("fa-umbrella-beach", "Leave and leaving", "Leave is unpaid and needs approval from someone above you. Leaving the company needs approval too, "
-                                                "and only happens once every salary due to you has been paid. The owner or a co-owner can also remove you, on the same condition, and you're told."),
+                                                "and only happens once every salary due to you has been paid. The owner or a co-owner can also remove you, on the same condition, and you're told. "
+                                                f"A request to join or leave that nobody answers within {REQUEST_WINDOW_DAYS:g} days is declined automatically by the system, and you can ask again."),
     ("fa-eye", "What the company sees", "Its owner, co-owners, managers and HR see your profile, skills, email, phone number, identity proof and bank details "
                                          "(the full account number only where your salary is recorded). The company's change log, which they can download, records every "
                                          "change to your profile and documents while you're in it, with full ID and bank numbers."),
     ("fa-robot", "The payroll guard", "If the company can't cover what its people have earned, it's warned, and halted after 24 hours: you're alerted by notification and email."),
+    ("fa-user-clock", "The owner", f"If the company's owner isn't online for {OWNER_AWAY_DAYS:g} days in a row, the company is halted for everyone's safety until they're back: you're alerted by notification and email."),
     ("fa-ranking-star", "The company AI", f"If the company uses it, an AI running on {APP_NAME}'s own server reads your reviews, task record, attendance, profile and CV to suggest or make promotions and to pick people for tasks. "
                                           "It can make mistakes; the company's owner and co-owners are responsible for what they let it do."),
     ("fa-business-time", "Focus", "During the company's working hours, staff can't browse or search other companies. If it keeps its staff to itself, you can't join "
@@ -82,6 +85,12 @@ STANDARD_TERMS = [  # what joining any company here means: shown with the compan
                              "server, nothing goes to an outside service. Afterwards the people invited and the company's owner, co-owners, managers and HR can open the "
                              "recording, captions, chat and notes."),
     ("fa-file-signature", "Changes", "The company can change its terms: you're told, and asked to accept the new version on its dashboard.")]
+ONLINE_TERMS = {  # the same terms while the admin's AI switch is online (standard_terms)
+    "The company AI": "If the company uses it, Claude, Anthropic's AI, reads your reviews, task record, attendance, profile and CV to suggest or make promotions and to pick people for tasks. "
+                      "What it reads is sent to Anthropic. It can make mistakes; the company's owner and co-owners are responsible for what they let it do.",
+    "Meetings": "Its owner, co-owners, managers and HR can invite you to video meetings in working hours. Only the people invited can join. A meeting can be recorded (everyone in it sees that). "
+                "What's said is captioned by Whisper on this server; to translate it to English and take notes, the captions and chat are sent to Anthropic's AI, Claude. Afterwards the people invited "
+                "and the company's owner, co-owners, managers and HR can open the recording, captions, chat and notes."}
 ID_COUNTRIES = {  # a person's identity proof, for the country of every salary currency: country -> {type: label}
     "India": {"aadhaar": "Aadhaar", "pan": "PAN card", "passport": "Passport", "driving_licence": "Driving licence", "voter_id": "Voter ID (EPIC)"},
     "United States": {"us_ssn": "Social Security number", "us_passport": "US passport", "us_licence": "Driver's license / state ID"},
@@ -116,6 +125,7 @@ CONSTRAINTS = {  # (table, name) -> CHECK; re-applied at startup (see MIGRATIONS
     ("approaches", "approaches_period_valid"): f"salary_period IS NULL OR salary_period IN ({_SQL_LIST(SALARY_PERIODS)})",
     ("companies", "companies_work_hours_valid"): f"work_end > work_start AND work_end - work_start BETWEEN interval '1 hour' AND interval '{MAX_WORK_HOURS} hours' AND work_days BETWEEN 1 AND 127",
     ("companies", "companies_max_members_valid"): f"max_members IS NULL OR max_members >= {MIN_EMPLOYEE_LIMIT}",
+    ("companies", "companies_owner_away_valid"): "owner_away_at IS NULL OR halted_at IS NOT NULL",  # away always means halted (either reason can be behind halted_at)
     ("company_members", "company_members_salary_valid"): f"salary IS NULL OR salary BETWEEN 1 AND {MAX_SALARY}",
     ("bank_accounts", "bank_accounts_valid"): f"(country <> 'IN' OR ifsc ~ '^[A-Z]{{4}}0[A-Z0-9]{{6}}$') AND country ~ '^[A-Z]{{2}}$' AND (swift = '' OR swift ~ '^[A-Z]{{6}}[A-Z0-9]{{2}}([A-Z0-9]{{3}})?$') "
                                               f"AND account_type IN ({_SQL_LIST(ACCOUNT_TYPES)}) AND account_last4 ~ '^[0-9A-Z]{{4}}$' AND char_length(btrim(holder_name)) >= 2",  # banks.py: any country
@@ -146,6 +156,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255))  # unique case-insensitively (index in MIGRATIONS)
     phone: Mapped[str | None] = mapped_column(String(20), unique=True)  # E.164, e.g. +14155550123
     dob: Mapped[date | None]  # date of birth (signup requires 18+); NULL for accounts made before it was asked
+    dob_changed_at: Mapped[datetime | None]  # its one change after signup (user's rule, routers/settings.py): set = locked for good; NULL = not used yet
     region: Mapped[str | None] = mapped_column(String(2))  # REGIONS: their currency + national holidays (signup / settings); NULL = not chosen yet
     timezone: Mapped[str | None] = mapped_column(String(64))  # one of REGION_ZONES[region]: every time is shown in it
     password_hash: Mapped[str] = mapped_column(String(200))
@@ -154,6 +165,7 @@ class User(Base):
     ip_created: Mapped[IPv4Address | IPv6Address | None] = mapped_column(INET)  # IP the account was created from
     ip_last_login: Mapped[IPv4Address | IPv6Address | None] = mapped_column(INET)
     last_login_at: Mapped[datetime | None]
+    last_online_at: Mapped[datetime] = mapped_column(default=utcnow)  # when they last really used the app, not a tab left open (presence.py); an owner away too long halts their companies (guard.py). The server's own time off doesn't count against anyone
     login_id: Mapped[uuid.UUID | None]  # one login at a time: a fresh uuid4 per login, mirrored in the Redis session; NULL = logged out
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     language: Mapped[str | None] = mapped_column(String(5))  # the UI language they picked (i18n.LANGUAGES); NULL = English
@@ -200,7 +212,14 @@ class Company(Base):
     id_proof_type: Mapped[str | None] = mapped_column(String(16))  # its identity proof (COMPANY_PROOFS): the photo is on disk (system.id_file("c", id)), never public
     id_proof_at: Mapped[datetime | None]
     liability_since: Mapped[datetime | None]  # guard.py: when employee liability first went over net worth (the warning's timestamp); NULL = covered
-    halted_at: Mapped[datetime | None]  # set 24 h after an unresolved warning: operations halted until the liability is covered again
+    halted_at: Mapped[datetime | None]  # halted, for either reason: 24 h after an unresolved warning (until the liability is covered again), or while its owner is away
+    owner_away_at: Mapped[datetime | None]  # guard.py: halted because its owner hasn't been online for OWNER_AWAY_DAYS; cleared when they're back
+    reg_checked_at: Mapped[datetime | None]  # idcheck.py: when the registries were last asked about its registration number; NULL = not yet
+    reg_verified_at: Mapped[datetime | None]  # a registry knows this number; NULL = format + check digit only
+    reg_verified_by: Mapped[str] = mapped_column(String(32), default="", server_default="")  # e.g. "EU VIES", "GLEIF"
+    reg_verified_name: Mapped[str] = mapped_column(String(200), default="", server_default="")  # the legal name the registry has
+    reg_note: Mapped[str] = mapped_column(String(300), default="", server_default="")  # what came of the last check, when it isn't good news
+    reg_photo_read_at: Mapped[datetime | None]  # the local AI read this number on the proof photo (not a forgery check)
     terms: Mapped[str] = mapped_column(String(5000), default="", server_default="")  # its own terms and conditions (owner / co-owners); "" = the standard ones only
     terms_version: Mapped[int] = mapped_column(default=1, server_default="1")  # +1 whenever its terms change: joining needs the current one accepted
     terms_updated_at: Mapped[datetime | None]
@@ -283,9 +302,14 @@ class IdentityProof(Base):
     name_on_id: Mapped[str] = mapped_column(String(100))
     number_enc: Mapped[bytes] = mapped_column(LargeBinary)
     number_last4: Mapped[str] = mapped_column(String(4))
-    verified_at: Mapped[datetime | None]  # checked online (idcheck.py, while ID_VERIFY=1); NULL = format + check digit only
-    verified_by: Mapped[str] = mapped_column(String(32), default="", server_default="")  # e.g. "Cashfree PAN"
+    verified_at: Mapped[datetime | None]  # checked online (idcheck.py); NULL = format + check digit only
+    verified_by: Mapped[str] = mapped_column(String(32), default="", server_default="")  # e.g. "Cashfree PAN", "Didit"
     verified_name: Mapped[str] = mapped_column(String(100), default="", server_default="")  # the name the registry has
+    check_session: Mapped[str] = mapped_column(String(64), default="", server_default="")  # a Didit check under way (idcheck.py); "" = none
+    check_url: Mapped[str] = mapped_column(String(400), default="", server_default="")  # where they do it, on Didit's own page
+    check_started_at: Mapped[datetime | None]
+    check_note: Mapped[str] = mapped_column(String(300), default="", server_default="")  # what came of the last check, when it isn't good news
+    photo_read_at: Mapped[datetime | None]  # the local AI read this number + name on the photo: a weaker check than verified_at, it can't spot a forgery
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 class CompanyBankAccount(Base):
     """The company's own account, the one salaries are paid from: required before any payout is recorded (owner / co-owners set it,
@@ -402,7 +426,56 @@ class SiteSetting(Base):
     key: Mapped[str] = mapped_column(String(40), primary_key=True)
     value: Mapped[str] = mapped_column(String(200), default="")
     updated_at: Mapped[datetime] = mapped_column(default=utcnow)
-SITE = {"single_company": False}  # the admin's switches as last read (app.py reads them at startup): what the templates hide or lock
+CLAUDE_MODELS = {"claude-opus-5-5": "Claude Opus 5.5", "claude-sonnet-5-5": "Claude Sonnet 5.5", "claude-haiku-5-5": "Claude Haiku 5.5"}  # the online AI's choices, the smartest first, the cheapest last
+SWITCHES = {"ai_mode": ("local", "online"), "id_checks": ("off", "on"), "payments": ("off", "cod", "test", "cashfree"), "claude_model": tuple(CLAUDE_MODELS)}  # the admin console's other switches: what each can be. No row yet: the value in .env, until the console's switch is first used
+_START = {"ai_mode": os.getenv("AI_MODE", "local"), "id_checks": "on" if ID_VERIFY else "off", "payments": os.getenv("PAYMENTS", "test").strip().lower(), "claude_model": os.getenv("CLAUDE_MODEL", "claude-opus-5-5")}
+SITE = {"single_company": False, "claude_limit": float(os.getenv("CLAUDE_MONTHLY_LIMIT_USD", "20")), **{k: v if v in SWITCHES[k] else SWITCHES[k][0] for k, v in _START.items()}}  # the admin's switches as last read (app.py reads them at startup, then every 10 s): what the templates hide or lock
+async def read_switches(db: AsyncSession) -> None:
+    for s in (await db.scalars(select(SiteSetting).where(SiteSetting.key.in_([*SWITCHES, "claude_limit"])))).all():
+        if s.key == "claude_limit": SITE["claude_limit"] = float(s.value)
+        elif s.value in SWITCHES[s.key]: SITE[s.key] = s.value
+async def set_switch(db: AsyncSession, name: str, value: str) -> None:
+    row = await db.get(SiteSetting, name, with_for_update=True) or SiteSetting(key=name)
+    row.value, row.updated_at = value, utcnow()
+    db.add(row); await db.commit()
+    SITE[name] = float(value) if name == "claude_limit" else value
+# ---------- what Claude costs: the app's own count from each answer's tokens, so a key can't run up a bill unseen. Past the month's limit the AI is offline until the admin raises it or the month ends. Anthropic's bill is the real number ----------
+CLAUDE_PRICES = {"claude-opus-5-5": (4.0, 20.0), "claude-sonnet-5-5": (2.0, 10.0), "claude-haiku-5-5": (0.10, 0.50)}  # US dollars per million tokens, in and out
+SPEND = {"month": "", "usd": 0.0, "unsaved": 0.0}
+_spend_lock = threading.Lock()
+def _month() -> str: return f"{utcnow():%Y-%m}"
+def note_spend(model: str, usage) -> None:  # (any thread) what one answer cost
+    rate_in, rate_out = CLAUDE_PRICES.get(model, CLAUDE_PRICES["claude-opus-5-5"])
+    cost = (usage.input_tokens * rate_in + usage.output_tokens * rate_out) / 1_000_000
+    with _spend_lock:
+        if SPEND["month"] != (now := _month()): SPEND.update(month=now, usd=0.0)
+        SPEND["usd"] += cost; SPEND["unsaved"] += cost
+def note_stream(model: str, stream) -> None:  # what a streamed answer used, whole or not: one stopped halfway counts too (user asked). Claude's own total comes with its end; until then, about 4 characters a token
+    try: m = stream.current_message_snapshot
+    except AssertionError: return  # not a word back
+    so_far = sum(len(getattr(b, "text", None) or getattr(b, "thinking", None) or "") for b in m.content) // 4
+    note_spend(model, SimpleNamespace(input_tokens=m.usage.input_tokens, output_tokens=m.usage.output_tokens if m.stop_reason else max(m.usage.output_tokens, so_far)))
+def spent_now() -> float: return SPEND["usd"] if SPEND["month"] == _month() else 0.0
+def over_limit() -> bool: return spent_now() >= SITE["claude_limit"]
+async def read_spend(db: AsyncSession) -> None:  # at startup: this month's count so far
+    s = await db.get(SiteSetting, f"claude_spent:{_month()}")
+    with _spend_lock: SPEND.update(month=_month(), usd=float(s.value) if s else 0.0, unsaved=0.0)
+async def save_spend(db: AsyncSession) -> None:  # every second, by grow.watch_ai: a crash doesn't forget what was spent
+    with _spend_lock: cost, SPEND["unsaved"] = SPEND["unsaved"], 0.0
+    if not cost: return
+    key = f"claude_spent:{_month()}"
+    try:
+        row = await db.get(SiteSetting, key, with_for_update=True) or SiteSetting(key=key, value="0")
+        row.value, row.updated_at = f"{float(row.value) + cost:.6f}", utcnow()
+        db.add(row); await db.commit()
+    except Exception:
+        with _spend_lock: SPEND["unsaved"] += cost  # Postgres was out for a moment: it goes with the next one
+        raise
+def ai_name() -> str: return "Claude" if SITE["ai_mode"] == "online" else "the local AI"  # who's doing the AI's work right now, as the pages say it
+def ai_title() -> str: return "Claude" if SITE["ai_mode"] == "online" else "The local AI"  # ... at the start of a sentence
+def claude_ready() -> bool: return SITE["ai_mode"] == "online" and bool(AI_STATUS.get("ready")) and not over_limit()  # the instruction bar + the CV reader use Claude only then: in local mode nothing goes to Anthropic
+def standard_terms() -> list:  # what joining means right now: while the admin's AI switch is online, what the AI reads goes to Anthropic, and the terms have to say so
+    return [(icon, title, ONLINE_TERMS.get(title, words)) for icon, title, words in STANDARD_TERMS] if SITE["ai_mode"] == "online" else STANDARD_TERMS
 async def single_company_mode(db: AsyncSession, lock: bool = True) -> bool:
     """Single company mode (user asked: an admin switch, only turned on while one company or none exists) is on: then no company at all can
     be created, the AI company finder + matching are off and the one company fills the companies page. lock: the switch's row stays locked
@@ -410,7 +483,7 @@ async def single_company_mode(db: AsyncSession, lock: bool = True) -> bool:
     s = await db.get(SiteSetting, "single_company", with_for_update=lock or None)
     SITE["single_company"] = bool(s and s.value == "on")
     return SITE["single_company"]
-templates.env.globals["single_company"] = lambda: SITE["single_company"]  # {% if single_company() %}: the side links, the dashboard's buttons
+templates.env.globals.update(single_company=lambda: SITE["single_company"], ai_name=ai_name)  # {% if single_company() %}: the side links, the dashboard's buttons
 class OverloadIP(Base):
     """Every IP address seen while the request limiter was overloaded (abuse.py; user asked: each and every incoming IP logged): how many
     requests it sent, how many were refused, when, the last account logged in from it and the first page it asked for. One row per
@@ -1241,6 +1314,12 @@ MIGRATIONS = [  # idempotent: create_all() only creates missing tables, so colum
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS hours_changed_at TIMESTAMP",  # working hours change once every HOURS_EVERY_DAYS (existing companies: free until their first change)
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS max_members INTEGER",  # the employee limit (existing companies: none until their next save, which asks for one)
     "ALTER TABLE company_members ADD COLUMN IF NOT EXISTS position_since TIMESTAMP",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_online_at TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'utc')",  # presence.py + guard.py: an owner away too long (existing accounts: their clock starts now)
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS dob_changed_at TIMESTAMP",  # a date of birth changes once after signup (user's rule)
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS owner_away_at TIMESTAMP", "CREATE INDEX IF NOT EXISTS companies_owner_away ON companies (owner_id) WHERE owner_away_at IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS member_requests_open ON member_requests (created_at) WHERE status = 'pending'",  # guard.py: requests nobody answered
+    *(f"ALTER TABLE identity_proofs ADD COLUMN IF NOT EXISTS {col}" for col in ("check_session VARCHAR(64) NOT NULL DEFAULT ''", "check_url VARCHAR(400) NOT NULL DEFAULT ''", "check_started_at TIMESTAMP", "check_note VARCHAR(300) NOT NULL DEFAULT ''", "photo_read_at TIMESTAMP")),  # idcheck.py
+    *(f"ALTER TABLE companies ADD COLUMN IF NOT EXISTS {col}" for col in ("reg_checked_at TIMESTAMP", "reg_verified_at TIMESTAMP", "reg_verified_by VARCHAR(32) NOT NULL DEFAULT ''", "reg_verified_name VARCHAR(200) NOT NULL DEFAULT ''", "reg_note VARCHAR(300) NOT NULL DEFAULT ''", "reg_photo_read_at TIMESTAMP")),
     "ALTER TABLE payouts DROP CONSTRAINT IF EXISTS payouts_one_per_cycle", "CREATE UNIQUE INDEX IF NOT EXISTS payouts_one_per_period ON payouts (company_id, user_id, cycle, period_start)",  # someone who left and came back counts their cycles from 1 again
     "ALTER TABLE company_members ADD COLUMN IF NOT EXISTS pay_history JSONB NOT NULL DEFAULT '[]'",  # a new pay starts with the next cycle (payroll.keep_pay)
     "ALTER TABLE shops ADD COLUMN IF NOT EXISTS public_id UUID NOT NULL DEFAULT gen_random_uuid()", "CREATE UNIQUE INDEX IF NOT EXISTS shops_public_id_key ON shops (public_id)",  # a shop's address isn't its company's join code

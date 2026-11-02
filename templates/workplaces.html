@@ -75,7 +75,7 @@
 {% if c.description %}<p class="hx-about">{{ c.description }}</p>{% endif %}{% if c.hiring %}<p class="hx-about"><b>hiring:</b> {{ c.hiring }}</p>{% endif %}{% endif %}
 <ul class="hx-co-facts">
 <li><i class="fa-solid fa-location-dot"></i>{% if c.location_address %}<a href="{{ maps_link(c.location_lat, c.location_lng) }}" target="_blank" rel="noopener noreferrer" title="Open on OpenStreetMap">{{ c.location_address }}</a> <span class="hx-verified" title="Verified with Geoapify"><i class="fa-solid fa-circle-check"></i> verified</span>{% else %}<span class="hx-missing">location not set{% if card.can_edit %}: required, open edit{% endif %}</span>{% endif %}</li>
-<li><i class="fa-solid fa-id-badge"></i>{% if c.registration_number %}{{ registration_types[c.registration_type].split(' (')[0] }}: <b>{{ c.registration_number }}</b>{% else %}<span class="hx-missing">registration number not set{% if card.can_edit %}: required, open edit{% endif %}</span>{% endif %}</li>
+<li><i class="fa-solid fa-id-badge"></i>{% if c.registration_number %}{{ registration_types[c.registration_type].split(' (')[0] }}: <b>{{ c.registration_number }}</b> · {{ company_status(c) }}{% if c.reg_note %} · <span class="hx-missing">{{ c.reg_note }}</span>{% endif %}{% else %}<span class="hx-missing">registration number not set{% if card.can_edit %}: required, open edit{% endif %}</span>{% endif %}</li>
 {% if c.website %}<li><i class="fa-solid fa-link"></i><a href="{{ c.website }}" target="_blank" rel="noopener noreferrer nofollow ugc">{{ c.website }}</a></li>{% endif %}
 <li><i class="fa-solid fa-door-open"></i>{{ c.exact_address or 'exact address not set' }}</li>
 <li><i class="fa-solid fa-clock"></i>working hours {{ work_hours(c) }} <small>({{ tz_name(c) }}{{ your_hours(c) }})</small></li>
@@ -122,6 +122,8 @@
 <div class="modal-body">
 <form method="post" action="/companies/{{ c.id }}/settings" class="hx-form" id="edit-form-{{ c.id }}">{{ csrf_input(request) }}
 {% with held=card.held %}{% include "_company_fields.html" %}{% endwith %}
+<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Your password, to save these changes</span><span class="hx-pfx" aria-hidden="true">your password:</span><input type="password" name="password" maxlength="128" autocomplete="current-password" required></label>
+<p class="hx-hint">// your password is needed to save changes to a company</p>
 </form>
 </div>
 <div class="modal-footer"><button type="button" class="hx-btn hx-btn-ghost" data-mdb-modal-init data-mdb-target="#c-{{ c.id }}"><i class="fa-solid fa-arrow-left"></i><span>back</span></button>

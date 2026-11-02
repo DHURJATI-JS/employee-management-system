@@ -102,7 +102,7 @@
 <a href="/" class="hx-foot-logo"><i class="fa-solid fa-terminal"></i><b>{{ app_name }}</b><span class="hx-cursor" aria-hidden="true">_</span></a>
 <p>AI employee management: hiring with full applicant files, live attendance, {{ cycle_days }}-day payroll with payslips and receipts, and a payroll guard that protects what employees have earned.</p>
 <ul class="hx-foot-facts">
-<li><i class="fa-solid {{ 'fa-circle-check hx-on-hours' if ai.ready else 'fa-plug-circle-xmark hx-off-hours' }}"></i><span>local AI {{ 'connected' if ai.ready else 'offline' }}: {{ ai.detail }}</span></li>
+<li><i class="fa-solid {{ 'fa-circle-check hx-on-hours' if ai.ready else 'fa-plug-circle-xmark hx-off-hours' }}"></i><span>{{ ai_name()|replace('the ', '') }} {{ 'connected' if ai.ready else 'offline' }}: {{ ai.detail }}</span></li>
 <li><i class="fa-solid fa-shield-halved"></i><span>nonce-only CSP · bank &amp; ID numbers encrypted (AES-256) · every upload virus-scanned</span></li>
 <li><i class="fa-solid fa-envelope"></i><span><a href="mailto:{{ contact_email }}">{{ contact_email }}</a></span></li>
 </ul>
@@ -160,6 +160,7 @@
 <div class="modal-footer"><button type="button" class="hx-btn hx-btn-ghost" data-mdb-dismiss="modal"><span>cancel</span></button>
 <button class="hx-btn hx-btn-solid" form="ai-find-form" data-busy="thinking…"><span>find companies</span><i class="fa-solid fa-arrow-right"></i></button></div>
 </div></div></div>{% endif %}
+<button type="button" class="hx-to-top" data-to-top aria-label="Back to the top" title="back to the top"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>{# shows once the page has scrolled down (app.js) #}
 {% if user %}{# the chat drawer (app.js "the chat drawer"): every chat of yours, company + personal + the Deminic AI, live, on every page once logged in (user asked).
    Company chats are labelled "company chat · <company>" (its owner, co-owners, managers and HR can read them); personal ones aren't (only the two of you) #}
 <button type="button" class="hx-chat-fab" data-drawer-open aria-controls="chat-drawer" aria-expanded="false" aria-label="Chats{{ ' (' ~ user.chats ~ ' unread)' if user.chats }}" title="chats"><i class="fa-solid fa-comments" aria-hidden="true"></i><span class="hx-chat-fab-ping" aria-hidden="true"></span><b class="hx-chat-fab-count" data-chat-count{{ ' hidden' if not user.chats }}>{{ user.chats }}</b></button>

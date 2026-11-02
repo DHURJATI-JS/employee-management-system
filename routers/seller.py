@@ -6,7 +6,7 @@ AI couldn't answer; replies to reviews. The dashboard: sales by day / category /
 statement (+ a matplotlib chart) and the balance with the platform: that money is for SHOP_MONEY only (owner, co-owners, managers, HR;
 not the shop staff), and HR who aren't shop staff get just that part. The live-tracking webhook's secret is made here (shown once)."""
 import asyncio, io, json, re, secrets, uuid
-import changelog
+import aijobs, changelog
 from datetime import UTC, date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from assist import rate_limited
 from form import ActionForm, AnswerForm, CompetitorForm, DeliverForm, NewProductForm, ProductForm, ProductMediaForm, ReasonForm, RefundForm, ShipForm, ShopOpenForm, ShopSettingsForm, TrackForm
-from guard import notify
+from guard import halted_reason, notify
 from media import PictureError, discard_upload, store_shop_photo, store_video
 from payroll import company_tz
 import shop
@@ -24,7 +24,7 @@ import shopai, shopstats
 from presence import hub
 from system import FormError, attachment, flash, render, safe_referer, same_text, seal, unflash_saved, unseal
 from tables import (CURRENCIES, SHOP_CATEGORIES, SHOP_MANAGERS, SHOP_MONEY, TOP, Company, CompetitorLink, Membership, Order, PriceSnapshot, Product, ProductInsight, ProductQuestion, ProductReview,
-                    Settlement, Shop, ShopStaff, ShopTask, TrackingEvent, User, get_db, utcnow)
+                    Settlement, Shop, ShopStaff, ShopTask, TrackingEvent, User, ai_title, get_db, utcnow)
 router = APIRouter(tags=["seller"])
 def _uid(request: Request) -> int: return int(request.state.user["user_id"])
 async def _seat(db: AsyncSession, request: Request, company_id: uuid.UUID, manage: bool = False, money: bool = False) -> tuple[Membership, Company, Shop | None, bool]:
@@ -75,7 +75,7 @@ async def open_shop(request: Request, company_id: uuid.UUID, form: ShopOpenForm 
     me = await db.get(Membership, (_uid(request), company_id))
     c = await db.get(Company, company_id) if me else None
     if not me or not c or me.position not in TOP: raise FormError("Only the owner or a co-owner can open the company's shop.")
-    if c.halted_at: raise FormError(f"{c.name} is halted by the payroll guard: cover what its people are owed first.")
+    if c.halted_at: raise FormError(halted_reason(c, "open a shop"))
     if not form.accept_commission: raise FormError(f"Tick that you accept the platform's {COMMISSION_PERCENT}% commission on successful sales.")
     if await db.get(Shop, company_id): return RedirectResponse(f"/companies/{company_id}/shop", 303)
     await open_for(db, c, form.currency, request.state.user["username"])
@@ -252,7 +252,7 @@ async def add_competitor(request: Request, company_id: uuid.UUID, pid: int, form
     db.add(link); await db.flush()
     lid = link.id
     await db.commit()
-    asyncio.get_running_loop().create_task(shopai.check_competitor(lid))
+    asyncio.get_running_loop().create_task(aijobs.run(aijobs.Job(_uid(request)), shopai.check_competitor(lid)))
     flash(request, "Competitor added: its price is read now and every day (refresh in a moment).", "success")
     return RedirectResponse(f"/companies/{company_id}/shop/products/{pid}#competitors", 303)
 @router.post("/companies/{company_id}/shop/competitors/{lid}/delete")
@@ -266,14 +266,15 @@ async def delete_competitor(request: Request, company_id: uuid.UUID, lid: int, _
     return RedirectResponse(f"/companies/{company_id}/shop/products/{p.id}#competitors", 303)
 @router.post("/companies/{company_id}/shop/products/{pid}/brief")
 async def ask_brief(request: Request, company_id: uuid.UUID, pid: int, _: ActionForm = Depends(ActionForm.as_form), db: AsyncSession = Depends(get_db)):
-    """The AI's pricing + quality brief for this product (background, local LLM: a minute or two). Tracking runs first, so it's fresh."""
+    """The AI's pricing + quality brief for this product (background: a minute or two). Tracking runs first, so it's fresh."""
     await _seat(db, request, company_id, manage=True); await _mine(db, company_id, pid)
-    if not shopai.AI_STATUS.get("ready"): raise FormError(f"The local AI is offline right now ({shopai.AI_STATUS.get('detail', '')}).")
+    if not shopai.AI_STATUS.get("ready"): raise FormError(f"{ai_title()} is offline right now ({shopai.AI_STATUS.get('detail', '')}).")
     if rate_limited(f"brief:{company_id}", 10, 3600): raise FormError("That's a lot of briefs in an hour: try again later.")
     row = await db.get(ProductInsight, pid) or ProductInsight(product_id=pid, status="running")
     row.status, row.created_at = "running", utcnow(); db.add(row); await db.commit()
-    async def job(): await shopai.track_product(pid); await shopai.brief(pid)
-    shopai.llm.put(job)
+    async def work(): await shopai.track_product(pid); await shopai.brief(pid)
+    job = aijobs.Job(_uid(request))  # gone meanwhile: it stops, and it stays counted
+    shopai.llm.put(lambda: aijobs.run(job, work()))
     flash(request, "The AI is reading the competition: the brief appears here in a minute or two (refresh).", "info")
     return RedirectResponse(f"/companies/{company_id}/shop/products/{pid}#brief", 303)
 @router.post("/companies/{company_id}/shop/products/{pid}/suggestions/{n}")

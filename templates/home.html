@@ -3,7 +3,11 @@
 {# The intro page: what the app does, feature by feature (only what it really does: no made-up numbers). Everything moves: the hero rises in, the
    terminal types itself (app.js [data-demo]), the strip scrolls, each card reveals on scroll (.hx-reveal) and plays its own small loop (.hx-viz-*:
    CSS only, decorative, aria-hidden: the text says it all). prefers-reduced-motion stops every animation (app.css). #}
-{% block first %}{# ---------- the last load test, the first thing on the page (user asked), with the MVP verdict once a stress test has given one (routers/loadtest.py: no report file = no alert) ---------- #}
+{% block first %}{# ---------- single company mode (user asked): whose site this is, with the way to it (app.py the_company) ---------- #}
+{% if solo %}<aside class="hx-load-alert" role="status"><i class="fa-solid fa-building" aria-hidden="true"></i>
+<div><b>This is {{ solo.name }}'s website</b><span>{{ app_name }} runs here for {{ solo.name }} alone.</span></div>
+<a href="{{ solo.href }}" class="hx-btn hx-btn-solid"><span>go to {{ solo.name }}</span><i class="fa-solid fa-arrow-right"></i></a></aside>{% endif %}
+{# ---------- the last load test, the first thing on the page (user asked), with the MVP verdict once a stress test has given one (routers/loadtest.py: no report file = no alert) ---------- #}
 {% set load = load_headline() %}{% if load %}<aside class="hx-load-alert{{ ' hx-load-alert-no' if load.mvp and not load.mvp.ready }}" role="status">
 <i class="fa-solid {{ 'fa-gauge-high' if not load.mvp else 'fa-circle-check' if load.mvp.ready else 'fa-triangle-exclamation' }}" aria-hidden="true"></i>
 {% if load.mvp %}<p class="hx-load-verdict">{% if load.mvp.ready %}MVP ready{% else %}Not MVP ready yet{% endif %}</p>{% endif %}
@@ -16,7 +20,7 @@
 <div class="col-lg-6">
 <span class="hx-kicker"><i class="fa-solid fa-shield-heart"></i> AI employee management that protects the people doing the work</span>
 <h1 class="hx-hero-title">Run your team.<br><span class="hx-grad">Protect your people.</span></h1>
-<p class="hx-lead">{{ app_name }} runs the people side of a company: hiring, fair attendance inside working hours, salaries {{ cycle_every }} with payslips, and a payroll guard that steps in before a company can owe its staff more than it has. Chats, video meetings with live captions, tasks and a marketplace shop come with it, on a local AI that keeps everything on your own server.</p>
+<p class="hx-lead">{{ app_name }} runs the people side of a company: hiring, fair attendance inside working hours, salaries {{ cycle_every }} with payslips, and a payroll guard that steps in before a company can owe its staff more than it has. Chats, video meetings with live captions, tasks and a marketplace shop come with it, {% if ai_name() == 'Claude' %}with Claude doing the AI's work{% else %}on a local AI that keeps everything on your own server{% endif %}.</p>
 <ul class="hx-hero-points">
 <li><i class="fa-solid fa-business-time"></i>8-hour days, never more</li>
 <li><i class="fa-solid fa-user-clock"></i>fair idle detection</li>
@@ -54,7 +58,7 @@
 </div>
 </section>
 {# ---------- a scrolling strip of what's under the hood (decorative: the same points are in the sections below) ---------- #}
-{% set strip = [("fa-lock", "bank + ID numbers AES-256 encrypted"), ("fa-virus-slash", "every upload virus-scanned"), ("fa-code", "nonce-only content security policy"), ("fa-brain", "a local AI: nothing leaves your server"),
+{% set strip = [("fa-lock", "bank + ID numbers AES-256 encrypted"), ("fa-virus-slash", "every upload virus-scanned"), ("fa-code", "nonce-only content security policy"), ("fa-brain", "a local AI on your server, or Claude with your key"),
                 ("fa-closed-captioning", "Whisper captions, translated to English"), ("fa-diagram-project", "matching by meaning (pgvector)"), ("fa-coins", "salaries in many currencies, at the day's rate"),
                 ("fa-building-columns", "IBAN · SWIFT · ABA · IFSC checked"), ("fa-key", "one login per account"), ("fa-file-lines", "a daily activity log")] %}
 <div class="hx-ticker" aria-hidden="true"><div class="hx-ticker-track">{% for _ in range(2) %}{% for i, t in strip %}<span><i class="fa-solid {{ i }}"></i>{{ t }}</span>{% endfor %}{% endfor %}</div></div>
@@ -80,7 +84,7 @@
 <div class="col-md-6 col-xl-3"><article class="hx-card hx-reveal hx-feat">
 <div class="hx-viz hx-viz-steps" aria-hidden="true"><span><i class="fa-solid fa-user-check"></i></span><span><i class="fa-solid fa-sack-dollar"></i></span><span><i class="fa-solid fa-door-open"></i></span></div>
 <h2><i class="fa-solid fa-scale-balanced"></i>fair in, fair out</h2>
-<p>Joining and leaving need approval, and you only leave once every salary due to you is paid. A company's terms are shown before you join, and any change is yours to accept.</p>
+<p>Joining and leaving need approval, and you only leave once every salary due to you is paid. With no answer in {{ window_days }} days, the system declines a request and says so. A company's terms are shown before you join, and any change is yours to accept.</p>
 </article></div>
 </div>
 </section>
@@ -117,7 +121,7 @@
 <div class="col-md-4"><article class="hx-card hx-reveal hx-feat">
 <div class="hx-viz hx-viz-meet" aria-hidden="true"><span class="hx-viz-tile"><i class="fa-solid fa-user"></i></span><span class="hx-viz-tile"><i class="fa-solid fa-user-tie"></i></span><span class="hx-viz-rec">rec</span><span class="hx-viz-cap"><span>the release goes out at five</span></span></div>
 <h2><i class="fa-solid fa-video"></i>meetings with captions</h2>
-<p>Video calls with screen sharing and recording. Whisper captions everyone in English as they talk, and the local AI keeps notes. Only the people invited can join, one call per company at a time.</p>
+<p>Video calls with screen sharing and recording. Whisper captions everyone in English as they talk, and {{ ai_name() }} keeps notes. Switch between the dark and light theme mid-call. Only the people invited can join, one call per company at a time.</p>
 </article></div>
 <div class="col-md-4"><article class="hx-card hx-reveal hx-feat">
 <div class="hx-viz hx-viz-cal" aria-hidden="true"><span></span><span></span><span></span><span class="hx-viz-hol"></span><span></span><span class="hx-viz-off"></span><span class="hx-viz-off"></span><i></i></div>
@@ -133,7 +137,7 @@
 <div class="col-md-6 col-xl-3"><article class="hx-card hx-reveal hx-feat">
 <div class="hx-viz hx-viz-type" aria-hidden="true"><i class="fa-solid fa-robot"></i><span>who won the match last night? · searching the web…</span></div>
 <h2><i class="fa-solid fa-robot"></i>Deminic AI, in every chat</h2>
-<p>A private AI chat on the chat button of every page. It streams its answer as it writes, reads pictures you attach, and searches the web when you ask (each result labelled). It runs on this server, not in the cloud.</p>
+<p>A private AI chat on the chat button of every page. It streams its answer as it writes, reads pictures you attach, and searches the web when you ask (each result labelled). {% if ai_name() == 'Claude' %}It runs on Claude, Anthropic's AI.{% else %}It runs on this server, not in the cloud.{% endif %}</p>
 </article></div>
 <div class="col-md-6 col-xl-3"><article class="hx-card hx-reveal hx-feat">
 <div class="hx-viz hx-viz-steps" aria-hidden="true"><span><i class="fa-solid fa-language"></i></span><span>हिं</span><span>ع</span></div>
@@ -153,6 +157,10 @@
 </div>
 <ul class="hx-trust hx-gap">
 <li class="hx-reveal"><i class="fa-solid fa-ranking-star"></i><b>an AI that knows the team</b><span>promotions from CVs, reviews and how fast the work gets done, and who's best for any task, ranked in a moment</span></li>
+<li class="hx-reveal"><i class="fa-solid fa-microchip"></i><b>local or online AI</b><span>vLLM on your own graphics card, or Claude with your own API key: one switch, and a key only counts once it works</span></li>
+<li class="hx-reveal"><i class="fa-solid fa-user-clock"></i><b>an owner can't just vanish</b><span>no owner online for {{ away_days }} days in a row and the company halts for everyone's safety, every employee is alerted, and it resumes when they're back</span></li>
+<li class="hx-reveal"><i class="fa-solid fa-id-card-clip"></i><b>an ID checker for any country</b><span>people's IDs from 220+ countries with Didit, company numbers against free official registries, and it can be switched off</span></li>
+<li class="hx-reveal"><i class="fa-solid fa-credit-card"></i><b>payments your way</b><span>online through Cashfree, cash on delivery only, or shop orders off: one switch</span></li>
 <li class="hx-reveal"><i class="fa-solid fa-key"></i><b>forgot your username or password?</b><span>a 10-minute code to your email or phone gets you back in</span></li>
 <li class="hx-reveal"><i class="fa-solid fa-paperclip"></i><b>files in every chat</b><span>several at once, dragged in or pasted, with link and YouTube previews, copy and forward</span></li>
 <li class="hx-reveal"><i class="fa-solid fa-calendar-days"></i><b>attendance on your calendar</b><span>present, part of the day, absent or on leave, day by day</span></li>
@@ -176,7 +184,7 @@
 <div class="col-md-4"><article class="hx-card hx-reveal hx-feat">
 <div class="hx-viz hx-viz-kyc" aria-hidden="true"><i class="fa-solid fa-id-card"></i><i class="fa-solid fa-building-circle-check"></i><i class="fa-solid fa-circle-check hx-viz-ok"></i></div>
 <h2><i class="fa-solid fa-user-shield"></i>verified on both sides</h2>
-<p>Every listed company's registration and location are checked, and everyone in a company has an identity proof on file. Bank details are checked too, across borders.</p>
+<p>Every listed company's registration and location are checked, and everyone in a company has an identity proof on file, with a badge showing how far it was verified. Bank details are checked too, across borders.</p>
 </article></div>
 </div>
 </section>

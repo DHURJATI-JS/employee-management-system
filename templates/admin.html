@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{# routers/admin.py console(): use (the server's resources: usage()), offenders (repeat spam / limit offenders, 7 days), warnings (the AI's), banned (accounts),
+{# routers/admin.py console(): sv (the services: _services_now(), never a key), use (the server's resources: usage()), offenders (repeat spam / limit offenders, 7 days), warnings (the AI's), banned (accounts),
    ips (blocked IP list: (entry, comment)), q + found (accounts) + companies (search results). Every action needs the admin session; bans + deletions need a clear reason #}
 {% block title %}Admin console{% endblock %}
 {% macro reason_form(action, label, icon, danger=True) %}<form method="post" action="{{ action }}" class="hx-admin-act">{{ csrf_input(request) }}
@@ -27,6 +27,45 @@
 <div class="hx-res"><small>files on disk</small><b>{{ u.uploads|bytes }}</b><span>uploads · logs {{ u.logs|bytes }}</span></div>
 <div class="hx-res"><small>local AI</small><b>{{ u.models|length }} model{{ '' if u.models|length == 1 else 's' }} loaded</b><span>{% for name in u.models %}{{ name }}{{ ', ' if not loop.last }}{% else %}none loaded{% endfor %} · queue {{ u.ai_queue }}</span></div>
 <div class="hx-res"><small>translator</small><b>{{ 'running' if u.translator else 'not running' }}</b><span>LibreTranslate, on this server</span></div>
+</div>
+</section>
+<section class="hx-section" id="services">
+<p class="hx-eyebrow">// services · a key needs your admin password, is tried first, saved to .env only if it works, and never shown again · no restart needed</p>
+{% macro choice(name, value, title, note, current) %}<label class="hx-ai-opt"><input type="radio" name="value" value="{{ value }}" data-autosubmit{{ ' checked' if value == current }}><span><b>{{ title }}</b><small>{{ note }}</small></span></label>{% endmacro %}
+{% macro keybox(field, label, set_) %}<label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">{{ label }}</span><input type="password" name="{{ field }}" maxlength="400" autocomplete="new-password" spellcheck="false" placeholder="{{ label }}{{ ' (saved: paste to replace)' if set_ }}" required></label>{% endmacro %}
+{% macro adminbox() %}<label class="hx-field"><i class="fa-solid fa-user-shield"></i><span class="visually-hidden">Your admin password</span><input type="password" name="admin_password" maxlength="256" autocomplete="current-password" placeholder="your admin password" required></label>{% endmacro %}
+{% macro live_box(on) %}<label class="hx-choice hx-toggle"><input type="checkbox" name="live" value="true"{{ ' checked' if on }}><i class="fa-solid fa-bolt"></i><span>these are real keys, not sandbox ones</span><i class="fa-solid fa-check hx-check"></i></label>{% endmacro %}
+<div class="hx-svc-grid">
+<article class="hx-svc"><h3><i class="fa-solid fa-robot"></i> AI engine</h3>
+<p class="hx-hint"><i class="fa-solid {{ 'fa-circle-check hx-on-hours' if ai_status().ready else 'fa-plug-circle-xmark hx-off-hours' }}"></i> {{ ai_status().detail }}</p>
+<form method="post" action="/admin/switch" class="hx-svc-opts">{{ csrf_input(request) }}<input type="hidden" name="name" value="ai_mode">
+{{ choice('ai_mode', 'local', 'local', 'vLLM on your graphics card: free, nothing leaves this PC', sv.ai_mode) }}{{ choice('ai_mode', 'online', 'online', "Claude, paid per use by your key: the AI's data goes to Anthropic", sv.ai_mode) }}<noscript><button class="hx-btn hx-btn-sm">apply</button></noscript></form>
+<form method="post" action="/admin/switch" class="hx-svc-row">{{ csrf_input(request) }}<input type="hidden" name="name" value="claude_model"><label class="visually-hidden" for="claude-model">Claude's model</label>
+<select id="claude-model" name="value" class="hx-select" data-autosubmit>{% for k, v in sv.models.items() %}<option value="{{ k }}"{{ ' selected' if k == sv.model }}>{{ v }}</option>{% endfor %}</select><noscript><button class="hx-btn hx-btn-sm">apply</button></noscript><span class="hx-hint">// Opus is the smartest and costs the most, Haiku the least</span></form>
+<form method="post" action="/admin/claude-limit" class="hx-svc-row">{{ csrf_input(request) }}<label class="hx-field"><i class="fa-solid fa-gauge"></i><span class="visually-hidden">Claude's monthly limit in US dollars</span><span class="hx-pfx" aria-hidden="true">limit $:</span><input type="number" name="usd" min="0" max="100000" step="any" value="{{ '%g'|format(sv.limit) }}" required></label><button class="hx-btn hx-btn-sm"><span>set</span></button>
+<span class="hx-hint">// about ${{ '%.2f'|format(sv.spent) }} used this month, counted here from each answer. Past the limit the AI goes offline until next month. Anthropic's bill is the real number</span></form>
+<form method="post" action="/admin/keys" class="hx-form hx-gap-sm">{{ csrf_input(request) }}<input type="hidden" name="service" value="claude">{{ keybox('key_one', 'Anthropic API key', sv.claude) }}{{ adminbox() }}
+<button class="hx-btn hx-btn-sm" data-busy="asking Claude…"><span>try it and save</span></button></form>
+<p class="hx-hint">// ID photos never go to Claude. If the key stops working the AI shows as offline: it never moves to the other engine by itself</p></article>
+<article class="hx-svc"><h3><i class="fa-solid fa-id-card-clip"></i> ID checker</h3>
+<form method="post" action="/admin/switch" class="hx-svc-opts">{{ csrf_input(request) }}<input type="hidden" name="name" value="id_checks">
+{{ choice('id_checks', 'off', 'off', 'nothing is sent anywhere: format and check digit only', sv.id_checks) }}{{ choice('id_checks', 'on', 'on', "every check below that's set up", sv.id_checks) }}<noscript><button class="hx-btn hx-btn-sm">apply</button></noscript></form>
+<ul class="hx-svc-list">
+<li><i class="fa-solid {{ 'fa-circle-check hx-on-hours' if sv.didit else 'fa-circle-minus' }}"></i><span><b>Didit</b>: people's IDs, 220+ countries, about 30 full checks free a month; then it stops and charges nothing{{ '' if sv.didit else ' · not set up' }}</span></li>
+<li><i class="fa-solid fa-circle-check hx-on-hours"></i><span><b>the local AI</b>: reads ID photos when Didit can't, on this PC only; it can't spot a forgery</span></li>
+<li><i class="fa-solid fa-circle-check hx-on-hours"></i><span><b>EU VIES + GLEIF</b>: company numbers, free, no key</span></li>
+<li><i class="fa-solid {{ 'fa-circle-check hx-on-hours' if sv.house else 'fa-circle-minus' }}"></i><span><b>Companies House</b>: UK company numbers, a free key{{ '' if sv.house else ' · not set up' }}</span></li>
+<li><i class="fa-solid {{ 'fa-circle-check hx-on-hours' if sv.cashfree_id else 'fa-circle-minus' }}"></i><span><b>Cashfree</b>: PAN, driving licence and voter ID by number, paid per check{{ '' if sv.cashfree_id else ' · not set up' }}</span></li></ul>
+<details class="hx-svc-keys"><summary>keys</summary>
+<form method="post" action="/admin/keys" class="hx-form hx-gap-sm">{{ csrf_input(request) }}<input type="hidden" name="service" value="didit">{{ keybox('key_one', 'Didit API key', sv.didit) }}{{ keybox('key_two', 'Didit workflow id', sv.didit) }}{{ adminbox() }}<button class="hx-btn hx-btn-sm" data-busy="asking Didit…"><span>try Didit and save</span></button></form>
+<form method="post" action="/admin/keys" class="hx-form hx-gap-sm">{{ csrf_input(request) }}<input type="hidden" name="service" value="companies_house">{{ keybox('key_one', 'Companies House API key', sv.house) }}{{ adminbox() }}<button class="hx-btn hx-btn-sm" data-busy="asking…"><span>try it and save</span></button></form>
+<form method="post" action="/admin/keys" class="hx-form hx-gap-sm">{{ csrf_input(request) }}<input type="hidden" name="service" value="cashfree_id">{{ keybox('key_one', 'Cashfree verification client id', sv.cashfree_id) }}{{ keybox('key_two', 'Cashfree verification secret', sv.cashfree_id) }}{{ live_box(sv.cashfree_id_live) }}{{ adminbox() }}<button class="hx-btn hx-btn-sm" data-busy="asking Cashfree…"><span>try it and save</span></button></form></details></article>
+<article class="hx-svc"><h3><i class="fa-solid fa-credit-card"></i> Payments</h3>
+<form method="post" action="/admin/switch" class="hx-svc-opts hx-svc-opts-4">{{ csrf_input(request) }}<input type="hidden" name="name" value="payments">
+{{ choice('payments', 'off', 'off', 'no orders at all', sv.payments) }}{{ choice('payments', 'cod', 'COD', 'cash on delivery only', sv.payments) }}{{ choice('payments', 'test', 'test', 'pretend payments, no money moves', sv.payments) }}{{ choice('payments', 'cashfree', 'online', 'real money through Cashfree, COD too', sv.payments) }}<noscript><button class="hx-btn hx-btn-sm">apply</button></noscript></form>
+{% if sv.pay_now != sv.payments %}<p class="hx-err-msg"><i class="fa-solid fa-triangle-exclamation"></i> Online needs Cashfree's keys: checkout is on cash on delivery until they're back.</p>{% endif %}
+<p class="hx-hint">// Cashfree: no setup or monthly fee, about 1.95% + GST a payment. UPI, cards, net banking, wallets, and international cards once it approves them. Payments under way are followed to the end whatever this switch says</p>
+<form method="post" action="/admin/keys" class="hx-form hx-gap-sm">{{ csrf_input(request) }}<input type="hidden" name="service" value="cashfree_pay">{{ keybox('key_one', 'Cashfree payments client id', sv.cashfree_pay) }}{{ keybox('key_two', 'Cashfree payments secret', sv.cashfree_pay) }}{{ live_box(sv.cashfree_pay_live) }}{{ adminbox() }}<button class="hx-btn hx-btn-sm" data-busy="asking Cashfree…"><span>try it and save</span></button></form></article>
 </div>
 </section>
 <section class="hx-section" id="mode">

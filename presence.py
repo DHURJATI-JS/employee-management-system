@@ -5,20 +5,23 @@ showing that person, and every TICK_S credits TICK_S seconds of attendance to ea
 inside working hours right now, on that company's clock. Credits are batched: one upsert per tick for everyone, capped at
 MAX_WORK_HOURS a day by the database. Owners, co-owners and freelancers are never credited, and freelancers' presence isn't shown.
 Someone tracked (staff, in working hours) who goes idle gets an "idle" message on every tab, which warns them; "active" when they're back.
-Every RECHECK_S the hub re-reads everyone's memberships (promotions, leaving) and closes sockets whose login session has ended."""
+Every RECHECK_S the hub re-reads everyone's memberships (promotions, leaving); every tick it closes sockets whose login session has ended.
+Each tick also keeps users.last_online_at, which guard.py watches owners by (user's rule): a tab in use or a page opened counts, a tab left open doesn't."""
 import asyncio, os, time, uuid
 from collections import namedtuple
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from fastapi import WebSocket
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
+import aijobs
 from payroll import company_tz, in_hours
-from system import reddisdb
-from tables import FREELANCE, MAX_WORK_HOURS, Attendance, Company, Membership, Session, monitored, utcnow
+from system import SEEN, reddisdb
+from tables import FREELANCE, MAX_WORK_HOURS, Attendance, Company, Membership, Session, User, monitored, utcnow
 TICK_S = max(1, int(os.getenv("PRESENCE_TICK_S", "30")))  # tests shorten it
 RECHECK_S = int(os.getenv("PRESENCE_RECHECK_S", "300"))
 DAY_CAP = MAX_WORK_HOURS * 3600
+STAMP_EVERY = timedelta(minutes=5)  # a row is written this often at most, however busy someone is
 Seat = namedtuple("Seat", "company_id position timezone location_country work_start work_end work_days halted_at name")  # one membership + its company's clock
 class Hub:
     def __init__(self):
@@ -103,11 +106,24 @@ class Hub:
         except Exception:
             for k, v in batch.items(): self.pending[k] = self.pending.get(k, 0) + v  # e.g. Postgres briefly down: kept for the next tick
             raise
+    async def stamp(self) -> None:  # who's really here right now -> users.last_online_at
+        here, now = {uid for uid, socks in self.sockets.items() if any(socks.values())} | SEEN, utcnow()
+        SEEN.clear()
+        if not here: return
+        async with Session() as db:
+            await db.execute(update(User).where(User.id.in_(here), User.last_online_at < now - STAMP_EVERY).values(last_online_at=now))
+            await db.commit()
     async def kick(self, uid: int) -> None:  # their login just ended (logout, a newer login, a password reset, a ban, the account deleted): every open tab's live connection closes now, not at the next recheck
         for ws in list(self.sockets.get(uid, {})):
             try: await ws.close(code=4401)
             except Exception: pass
-    async def recheck(self) -> None:  # the safety net for any session that ended without kick() (e.g. it simply expired)
+    async def left(self, uid: int, company_id) -> None:  # they're out of a company: its dashboards stop updating on their tabs now, not at the next recheck
+        for ws in list(self.sockets.get(uid, {})):
+            if self.watching.get(ws) == company_id:
+                self.watching.pop(ws, None); self.watchers.get(company_id, set()).discard(ws)
+                await self._send([ws], {"t": "out", "company": str(company_id)})
+        if uid in self.seats: self.seats[uid] = [s for s in self.seats[uid] if s.company_id != company_id]
+    async def logins(self) -> None:  # every tick: a session that ended without kick() (it simply expired): its sockets close within TICK_S. Meetings' sockets are in here too
         if not self.session: return
         sockets = list(self.session.items())
         async with reddisdb.pipeline(transaction=False) as p:
@@ -117,7 +133,6 @@ class Hub:
             if not uid:
                 try: await ws.close(code=4401)
                 except Exception: pass
-        if self.sockets: await self._load_seats(list(self.sockets))
     async def run(self) -> None:
         checked = time.monotonic()
         while True:
@@ -125,6 +140,16 @@ class Hub:
             try:
                 self.credit()
                 await self.flush()
-                if time.monotonic() - checked >= RECHECK_S: checked = time.monotonic(); await self.recheck()
+                await self.stamp()
+                await self.logins()
+                if time.monotonic() - checked >= RECHECK_S and self.sockets: checked = time.monotonic(); await self._load_seats(list(self.sockets))
             except Exception as e: print(f"presence: {type(e).__name__}: {e}")
+    async def strays(self) -> None:  # every second: AI work for someone with no tab open stops once they've been gone aijobs.GRACE_S
+        since: dict[int, float] = {}
+        while True:
+            await asyncio.sleep(1)
+            now, running = time.monotonic(), aijobs.people()
+            for uid in [u for u in since if u in self.sockets or u not in running]: del since[uid]
+            for uid in running - set(self.sockets):
+                if now - since.setdefault(uid, now) >= aijobs.GRACE_S: aijobs.halt(uid)
 hub = Hub()

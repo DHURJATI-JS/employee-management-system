@@ -4,6 +4,7 @@ the prompt left out. Nothing is stored. Staff can't use it during their company'
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 import finder
+from aijobs import Job
 from assist import rate_limited
 from form import FindForm
 from routers.discover import on_duty, solo
@@ -23,7 +24,7 @@ async def find(request: Request, form: FindForm = Depends(FindForm.as_form), db:
     if busy := await on_duty(request, db, uid) or await solo(request, db): return busy
     if rate_limited(f"find:{uid}", 12, 300): raise FormError("That's a lot of searches in a short time: wait a few minutes.")
     await db.commit()  # no transaction stays open while the model thinks: past a minute Postgres would close the connection and the page would crash (the fuzz test, with the AI busy)
-    crit, how = await finder.read(form.prompt)
+    with Job(uid): crit, how = await finder.read(form.prompt)
     result = await finder.find(db, uid, crit)
     profile = await db.get(Profile, uid)
     return render(request, "find", {"prompt": form.prompt, "result": result, "crit": crit, "how": how, "examples": EXAMPLES, "understood": finder.understood(crit),

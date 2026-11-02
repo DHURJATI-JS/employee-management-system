@@ -1,4 +1,4 @@
-# The local AI (grow.py): vLLM on the Radeon RX 9060 XT. Built + started by setup_services.ps1 as the "vllm" container, published on 127.0.0.1:8100 only.
+# The local AI (grow.py): vLLM on the Radeon RX 9060 XT (16 GB). Built + started by setup_services.ps1 as the "vllm" container, published on 127.0.0.1:8100 only.
 # AMD's image expects Linux's /dev/kfd, but under Windows the card reaches Docker as /dev/dxg: ROCDXG is AMD's bridge between the two (the roct digest is the one pinned in AMD's ROCm CLI),
 # and its amd-smi replaces the image's, which refuses to start without the Linux driver (vLLM then can't tell which device it's on).
 # The vllm-models volume keeps the model: GGUF, because on AMD cards vLLM runs no 4-bit format but this one, and FP8 wouldn't leave room in 16 GB.

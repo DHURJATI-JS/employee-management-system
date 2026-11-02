@@ -7,7 +7,7 @@
 <h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>pay {{ price(cur, total)|striptags }}</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
 <ul class="hx-pay-orders">{% for o in orders %}<li><b>{{ o.number }}</b> · {{ o.company_name }} · {{ items.get(o.id, [])|map(attribute='qty')|sum }} item{{ '' if items.get(o.id, [])|map(attribute='qty')|sum == 1 else 's' }} · {{ price(o.currency, o.total_minor) }}</li>{% endfor %}</ul>
 <p class="hx-hint">// pay within {{ minutes }} minutes: after that the order is cancelled and its items go back on sale</p>
-{% if mode == 'test' %}<p class="hx-warn-msg"><i class="fa-solid fa-flask"></i> Test mode: this is a pretend payment page. No money moves (set PAYMENTS=cashfree for real payments).</p>
+{% if mode == 'test' %}<p class="hx-warn-msg"><i class="fa-solid fa-flask"></i> Test mode: this is a pretend payment page. No money moves (real payments are switched on in the admin console).</p>
 <div class="hx-row-actions"><form method="post" action="/shop/pay/{{ ck }}/pay">{{ csrf_input(request) }}<button class="hx-btn hx-btn-solid" data-busy="paying…"><i class="fa-solid fa-credit-card"></i><span>pay {{ price(cur, total)|striptags }} (test)</span></button></form>
 <form method="post" action="/shop/pay/{{ ck }}/fail">{{ csrf_input(request) }}<button class="hx-btn hx-btn-ghost"><span>make it fail</span></button></form></div>
 {% elif url %}<a class="hx-btn hx-btn-solid" href="{{ url }}" data-pay-go rel="noopener"><i class="fa-solid fa-credit-card"></i><span>pay {{ price(cur, total)|striptags }} on Cashfree</span><i class="fa-solid fa-arrow-up-right-from-square"></i></a>

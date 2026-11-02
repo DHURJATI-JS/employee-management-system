@@ -8,12 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from assist import update_company_embedding, user_context as _memberships  # memberships + companies + members + users in 2 queries
 from decoraters import public
+import idcheck
 from form import ActionForm, CompanyForm, CompanySettingsForm, ConfirmForm, DecisionForm, JoinCodeForm, JoinForm, PositionForm, TermsForm
 from fx import convert, pay_in
 from guard import halted_reason, join_block, no_room, notify, notify_many
 from payroll import approved_leaves, at_work, cycle_pay, hours_label, hours_locked, keep_pay, money, pay_rows, unsettled
 from media import PictureError, discard_upload, remove_id_photo, remove_picture, store_id_photo, store_picture
-from meet import remove_files
+from meet import out_of_company, remove_files
 from shop import COMMISSION_PERCENT, cancel
 from places import PlaceError, verify_place
 from routers.chats import unread_by_company
@@ -22,7 +23,7 @@ from routers.discover import on_duty
 from routers.leave import JOIN_APPROVERS, can_decide
 from bankcheck import BankCheckError, verify_bank
 from system import APP_NAME, MAX_COMPANIES_PER_ACCOUNT, UPLOAD_DIR, FormError, flash, picture, remove_chat_files, render, seal, send_email, unflash_saved
-from tables import (ACCOUNT_TYPES, COMPANY_PROOFS, CURRENCIES, DEFAULT_CURRENCY, FREELANCE, HOURS_EVERY_DAYS, ID_TYPES, MAX_EMPLOYEE_LIMIT, MAX_SALARY, MIN_EMPLOYEE_LIMIT, TOP, JOIN_AS, MAX_WORK_HOURS, POSITIONS, REGISTRATION_TYPES, SALARY_PERIODS, STAFF, STANDARD_TERMS, Approach,
+from tables import (ACCOUNT_TYPES, COMPANY_PROOFS, CURRENCIES, DEFAULT_CURRENCY, FREELANCE, HOURS_EVERY_DAYS, ID_TYPES, MAX_EMPLOYEE_LIMIT, MAX_SALARY, MIN_EMPLOYEE_LIMIT, TOP, JOIN_AS, MAX_WORK_HOURS, POSITIONS, REGISTRATION_TYPES, SALARY_PERIODS, STAFF, standard_terms, Approach,
                     BankAccount, Chat, Company, CompanyBankAccount, CompanySalary, DeletionRequest, IdentityProof, Meeting, MemberRequest, Membership, Order, OwnershipOffer, Payout, Shop, User, back_in_company, get_db,
                     single_company_mode, utcnow)
 router = APIRouter(tags=["companies"])  # @public only where a signed-out visitor must be redirected; every query is scoped to the user
@@ -107,6 +108,7 @@ def company_facts(c: Company, pay: dict) -> dict:  # what a company's change log
             "exact address": c.exact_address, "working hours": hours_label(c) if c.work_start else "", "time zone": c.timezone, "positions": [label(k) for k in c.positions],
             "minimum salaries": [f"{label(k)} {v:,} {c.salary_currency} a {c.salary_period}" for k, v in sorted(pay.items())], "its own terms": c.terms}
 def apply_identity(c: Company, form, place: dict) -> None:  # + working hours, on the location's clock
+    if (c.registration_type, c.registration_number) != (form.registration_type, form.registration_number): c.reg_checked_at, c.reg_verified_at, c.reg_verified_by, c.reg_verified_name, c.reg_note, c.reg_photo_read_at = None, None, "", "", "", None  # a new number: checked afresh (idcheck.py)
     c.website, c.registration_type, c.registration_number = form.website, form.registration_type, form.registration_number
     c.location_place_id, c.location_address, c.location_lat, c.location_lng, c.location_country = place["place_id"], place["address"], place["lat"], place["lng"], place["country"]
     c.timezone, c.work_start, c.work_end, c.work_days = place.get("timezone") or c.timezone, form.work_start, form.work_end, form.days_mask()
@@ -154,6 +156,7 @@ async def create_company(request: Request, form: CompanyForm = Depends(CompanyFo
         gone(); await db.rollback()
         raise FormError(f"That {form.registration_type} number is already registered to another company.") from None
     except Exception: gone(); raise
+    idcheck.queue_company(cid)  # its registration number, against the free registries
     extra = {"net worth": money(worth_in, form.net_worth) if form.net_worth is not None else "", "identity proof": form.id_proof_type, "shop": "opened" if form.sells and form.open_shop else "",
              "company bank account": f"{acct.holder_name}, {acct.bank_name}, account {acct.account_number} ({acct.account_type}), {acct.routing or ''} {acct.swift or ''}".strip() if acct else ""}
     changelog.company(cid, "company created", changelog.facts(company_facts(company, form.salaries()) | extra))
@@ -198,7 +201,7 @@ async def join_confirm_page(request: Request, company_id: uuid.UUID, db: AsyncSe
     pending = await db.scalar(select(MemberRequest).where(MemberRequest.company_id == company.id, MemberRequest.user_id == uid, MemberRequest.kind == "join", MemberRequest.status == "pending"))
     enquiry = await db.scalar(select(Chat.id).where(Chat.company_id == company.id, Chat.kind == "enquiry", Chat.direct_key == str(uid)))  # asked them something already: its chat
     return render(request, "join_position", {"company": company, "positions": POSITIONS, "join_as": JOIN_AS, "freelance": FREELANCE, "blocked": blocked, "enquiry": enquiry,
-                                             "offered": bool(offer and not offer.dismissed_at), "pending": pending, "standard_terms": STANDARD_TERMS,
+                                             "offered": bool(offer and not offer.dismissed_at), "pending": pending, "standard_terms": standard_terms(),
                                              "terms_outdated": bool(pending and pending.terms_version != company.terms_version)})  # changed since they asked: accept again
 @router.post("/companies/join/{company_id}")
 async def join(request: Request, company_id: uuid.UUID, form: JoinForm = Depends(JoinForm.as_form), db: AsyncSession = Depends(get_db)):
@@ -289,6 +292,8 @@ def reprice(company: Company, minimums: dict[str, int], form) -> bool:
     return moved
 @router.post("/companies/{company_id}/settings")
 async def company_settings(request: Request, company_id: uuid.UUID, form: CompanySettingsForm = Depends(CompanySettingsForm.as_form), db: AsyncSession = Depends(get_db)):
+    from routers.settings import _verified  # (settings imports this file)
+    await _verified(db, request, form.password)  # a session left open can't change a company; before the lock: checking a password takes a moment
     company = await db.get(Company, company_id, with_for_update=True, options=[selectinload(Company.members)])  # locked: no position change races this
     # (selectinload, not joinedload: joining the members list into a FOR UPDATE query would lock every membership row and repeat the company per member)
     actor = await db.get(Membership, (_uid(request), company_id)) if company else None
@@ -333,6 +338,7 @@ async def company_settings(request: Request, company_id: uuid.UUID, form: Compan
     except IntegrityError:
         await db.rollback()
         raise FormError(f"That {form.registration_type} number is already registered to another company.") from None
+    if not company.reg_checked_at: idcheck.queue_company(company_id)  # a new registration number
     changed = " · ".join(filter(None, (changelog.diff(before, after), "employee limit changed" if limit_moved else "")))  # (without the number: managers and HR can download this log, and only the owner and co-owners see it)
     changelog.company(company_id, "company details changed", (changed or "saved again, nothing changed") + (f" · terms are now version {company.terms_version}" if terms_changed else ""))
     changes = [f"+{label(k)}" for k in added] + [f"−{label(k)}" for k in removed]
@@ -434,6 +440,7 @@ async def _who_is_owed(db: AsyncSession, c: Company) -> list[str]:
 OPEN_ORDERS = ("placed", "packed", "shipped", "out_for_delivery")  # bought and not delivered yet
 async def deletion_block(db: AsyncSession, c: Company) -> str | None:
     """Why c can't be deleted right now, or None. The same for every way of doing it: the company's own button, the co-owners' last vote, its owner deleting their account."""
+    if c.owner_away_at: return halted_reason(c, "be deleted")
     if c.halted_at or c.liability_since: return f"{c.name} can't be deleted while it owes its employees more than its net worth: pay them or add funds first."
     if owed := await _who_is_owed(db, c): return f"Settle every salary before deleting {c.name}: {'; '.join(owed)} still due (the current cycle too)."
     if n := await db.scalar(select(func.count()).where(Order.company_id == c.id, Order.status.in_(OPEN_ORDERS))): return f"{c.name} has {n} order{'s' if n != 1 else ''} not delivered yet: deliver or cancel {'them' if n != 1 else 'it'} first, or the buyers are left with nobody to ship or refund."
@@ -469,6 +476,7 @@ async def erase_company(db: AsyncSession, c: Company, reason: str = "") -> str:
     members = [m.user_id for m in c.members]
     await db.delete(c)  # Postgres ON DELETE CASCADE removes every membership + meeting; payouts + notices keep their own copy (SET NULL)
     await db.commit()
+    for u in members: await out_of_company(cid, u)
     remove_chat_files(chats)
     changelog.company(cid, "company deleted" + (f" by the admin: {reason}" if reason else ""), f"this change log is kept until {changelog.retire('c', cid)}, then erased", by="admin" if reason else None)
     for u in members: changelog.add("u", u, f"{name} was deleted" + (f" by the admin: {reason}" if reason else ""), by="admin" if reason else None)

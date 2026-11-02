@@ -23,7 +23,9 @@
 <a href="/companies/{{ c.id }}/tasks?ai=1#give" class="hx-btn hx-btn-sm hx-btn-solid"><i class="fa-solid fa-wand-magic-sparkles"></i><span>auto task assignment</span></a></div>{% endif %}
 </div>
 </section>
-{% if c.halted_at %}<div class="hx-guard hx-guard-halt" role="alert"><i class="fa-solid fa-hand"></i><div><b>Operations halted since {{ halted_since }} · payroll guard</b>
+{% if c.owner_away_at %}<div class="hx-guard hx-guard-halt" role="alert"><i class="fa-solid fa-hand"></i><div><b>Operations halted since {{ halted_since }} · the owner is away</b>
+<span>{{ c.name }}'s owner hasn't been online for {{ away_days }} days in a row. Until they're back it can't take on people, make offers, change positions, pay its owners or be deleted, and attendance isn't tracked. Everyone has been alerted. Paying staff and adding funds still work.</span></div></div>
+{% elif c.halted_at %}<div class="hx-guard hx-guard-halt" role="alert"><i class="fa-solid fa-hand"></i><div><b>Operations halted since {{ halted_since }} · payroll guard</b>
 <span>{{ c.name }}'s employee liability has been over its net worth since {{ since }}. Until it pays its employees or adds funds it can't take on people, make offers, change positions, pay its owners or be deleted, and attendance isn't tracked. Every employee has been alerted.{% if top %} Pay the staff below, or deposit funds, to resume.{% endif %}</span></div></div>
 {% elif c.liability_since and ledger %}<div class="hx-guard" role="alert"><i class="fa-solid fa-triangle-exclamation"></i><div><b>Payroll guard warning · {{ since }}</b>
 {% set wcur = worth_cur(c) %}<span>Employee liability ({{ money(c.salary_currency, held) }}{% if wcur != c.salary_currency %} ≈ {{ money(wcur, convert(held, c.salary_currency, wcur)) }}{% endif %}) is more than the net worth ({{ money(wcur, c.net_worth) }}). Pay your employees or add funds before <b>{{ deadline }}</b>, or all operations halt to protect them and every employee is alerted.</span></div></div>{% endif %}
@@ -103,7 +105,7 @@
 {% if approver %}{% set others = reqs|rejectattr('user_id', 'equalto', me.user_id)|list %}
 {% if others %}<div class="hx-tx-list hx-gap-sm">{% for r in others %}{% set u = r.user %}
 <details class="hx-tx hx-req" id="req-{{ r.id }}"><summary><span class="hx-tx-icon" aria-hidden="true"><i class="fa-solid {{ 'fa-user-plus' if r.kind == 'join' else 'fa-door-open' }}"></i></span>
-<span class="hx-tx-main"><b>{{ u.username }} wants to {{ ('join as ' ~ positions[r.position].label) if r.kind == 'join' else 'leave' }}</b><small>asked {{ r.created_at|tenure }} ago{% if r.note %} · “{{ r.note }}”{% endif %}</small></span>
+<span class="hx-tx-main"><b>{{ u.username }} wants to {{ ('join as ' ~ positions[r.position].label) if r.kind == 'join' else 'leave' }}</b><small>asked {{ r.created_at|tenure }} ago{% if r.note %} · “{{ r.note }}”{% endif %} · with no answer, the system declines it on {{ at(auto_decline(r), '%d %b %Y') }}</small></span>
 <span class="hx-new">{{ 'join' if r.kind == 'join' else 'leave' }}</span><i class="fa-solid fa-chevron-down hx-tx-chev" aria-hidden="true"></i></summary>
 <div class="hx-tx-body">
 {% if r.kind == 'join' %}{% set p = profiles.get(r.user_id) %}{% set i = idents.get(r.user_id) %}{% set b = abanks.get(r.user_id) %}
@@ -113,7 +115,7 @@
 <dt>Skills</dt><dd>{{ p.skills|join(', ') if p and p.skills else 'none listed' }}</dd>
 {% if p and p.bio %}<dt>About</dt><dd>{{ p.bio|truncate(400) }}</dd>{% endif %}
 {% if p and p.wants() %}<dt>Salary wanted</dt><dd>{{ p.wants() }}</dd>{% endif %}
-<dt>Identity proof</dt><dd>{% if i %}{{ id_types[i.id_type] }} ••••{{ i.number_last4 }} · name on it: {{ i.name_on_id }} · {{ ('verified online: ' ~ i.verified_name) if i.verified_at else 'format and check digit checked' }} · <a href="/identity/u/{{ r.user_id }}/photo" target="_blank" rel="noopener">view the photo</a>{% else %}<span class="hx-missing">missing</span>{% endif %}</dd>
+<dt>Identity proof</dt><dd>{% if i %}{{ id_types[i.id_type] }} ••••{{ i.number_last4 }} · name on it: {{ i.name_on_id }} · {{ id_status(i) }} · <a href="/identity/u/{{ r.user_id }}/photo" target="_blank" rel="noopener">view the photo</a>{% else %}<span class="hx-missing">missing</span>{% endif %}</dd>
 <dt>Bank details</dt><dd>{% if b %}{{ bank_line(b) }} · holder {{ b.holder_name }} · {{ ('verified with the bank: ' ~ b.verified_name) if b.verified_at else 'not verified with the bank' }}{% else %}<span class="hx-missing">missing</span>{% endif %}</dd>
 <dt>Other workplaces</dt><dd>{{ elsewhere.get(r.user_id, [])|join(', ') or 'none listed publicly' }}</dd>
 <dt>Terms</dt><dd>{% if r.terms_version == c.terms_version %}<span class="hx-ok">accepted version {{ r.terms_version }}{% if r.terms_accepted_at %} · {{ r.terms_accepted_at|tenure }} ago{% endif %}</span>{% else %}<span class="hx-missing">accepted {{ ('version ' ~ r.terms_version) if r.terms_version else 'no version' }}; the current one is {{ c.terms_version }}: they've been asked to accept it before anyone can approve</span>{% endif %}</dd>
@@ -200,7 +202,7 @@
 <noscript><button class="hx-btn hx-btn-sm">save</button></noscript></form>
 {% if c.ai_promotions != 'off' %}<form method="post" action="/companies/{{ c.id }}/ai/review" class="hx-gap-sm">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm" data-busy="queued…"{{ ' disabled' if not coai.ai.ready }}><i class="fa-solid fa-wand-magic-sparkles"></i><span>run the review now</span></button></form>{% endif %}{% endif %}
 <p class="hx-hint hx-gap-sm">// {% if c.ai_reviewed_at %}last review {{ at(c.ai_reviewed_at) }} · {% endif %}reviews count by who wrote them: owner and co-owners ×3, managers and HR ×2, colleagues ×1 · the shortlist needs a score of 3+, no dislike from the owner or a co-owner, no overdue tasks, 70% of tasks on time and within their deadlines on average, 75% attendance, a CV or skills on their profile and {{ coai.after }} days in the position · one step up at a time, never to co-owner · {% if not coai.ai.ready %}<span class="hx-off-hours">the local AI is offline: nothing is promoted by itself until it's back</span>{% else %}the local AI reads the shortlist's CVs, speed and reviews and has the last word{% endif %}</p>
-{% for s in coai.waiting %}<article class="hx-ai-call"><div><b>{{ coai.names.get(s.user_id, 'someone') }}</b>: {{ positions[s.from_position].label }} → <b>{{ positions[s.to_position].label }}</b><small>{{ s.ai_says or "the local AI was offline: only the rules shortlisted them" }}</small></div>
+{% for s in coai.waiting %}<article class="hx-ai-call"><div><b>{{ coai.names.get(s.user_id, 'someone') }}</b>: {{ positions[s.from_position].label }} → <b>{{ positions[s.to_position].label }}</b><small>{{ s.ai_says or "the AI was offline: only the rules shortlisted them" }}</small></div>
 {% if coai.decides %}<div class="hx-row-actions"><form method="post" action="/companies/{{ c.id }}/ai/calls/{{ s.id }}/apply">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-solid"><i class="fa-solid fa-arrow-up"></i><span>promote</span></button></form>
 <form method="post" action="/companies/{{ c.id }}/ai/calls/{{ s.id }}/dismiss">{{ csrf_input(request) }}<button class="hx-btn hx-btn-sm hx-btn-ghost"><span>dismiss</span></button></form></div>{% endif %}</article>{% endfor %}
 {% if coai.rows %}<div class="hx-admin-table hx-gap-sm"><table><thead><tr><th>member</th><th>reviews</th><th>tasks</th><th>attendance</th><th>the AI's view</th></tr></thead><tbody>

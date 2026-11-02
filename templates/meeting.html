@@ -33,7 +33,7 @@
 <figcaption><i class="fa-solid fa-film"></i> recording {{ p }} · <a href="/meetings/{{ m.id }}/recording/{{ p }}?download=true">download (.webm)</a></figcaption></figure>{% endfor %}</div>
 </section>{% endif %}
 <section class="hx-section" id="notes">
-<p class="hx-eyebrow">// AI notes{% if m.notes_at %} · updated {{ at(m.notes_at) }}{% endif %} · written by the local AI from the captions and chat: check them</p>
+<p class="hx-eyebrow">// AI notes{% if m.notes_at %} · updated {{ at(m.notes_at) }}{% endif %} · written by the AI from the captions and chat: check them</p>
 {% if notes %}<article class="hx-card hx-meet-notes">
 {% if notes.summary %}<p class="hx-meet-sum">{{ notes.summary }}</p>{% endif %}
 {% if notes.points %}<h3><i class="fa-solid fa-list-ul"></i> key points</h3><ul>{% for p in notes.points %}<li>{{ p }}</li>{% endfor %}</ul>{% endif %}

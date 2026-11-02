@@ -4,7 +4,7 @@
 {% block title %}AI company finder{% endblock %}
 {% block content %}<div class="hx-wide">
 <section class="hx-term hx-page-head">
-<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/find</span><span class="hx-term-meta"><i class="fa-solid {{ 'fa-circle-check' if ai_status().ready else 'fa-plug-circle-xmark' }}"></i> local AI {{ 'connected' if ai_status().ready else 'offline: rules only' }}</span></div>
+<div class="hx-term-bar" aria-hidden="true"><span class="hx-dot hx-r"></span><span class="hx-dot hx-y"></span><span class="hx-dot hx-g"></span><span class="hx-term-title">~/find</span><span class="hx-term-meta"><i class="fa-solid {{ 'fa-circle-check' if ai_status().ready else 'fa-plug-circle-xmark' }}"></i> {{ ai_name()|replace('the ', '') }} {{ 'connected' if ai_status().ready else 'offline: rules only' }}</span></div>
 <div class="hx-term-body">
 <h1 class="hx-title"><span class="hx-prompt">$</span> <span data-type>find --companies "{{ (prompt or 'what you want')|truncate(40) }}"</span><span class="hx-cursor" aria-hidden="true">_</span></h1>
 <p class="hx-sub">// say what you want in your own words: the kind of work, pay (any currency), the currency it pays in, other jobs, freelancing, place, hours. Nothing you type is stored</p>
@@ -12,7 +12,7 @@
 <label class="hx-field hx-area"><i class="fa-solid fa-wand-magic-sparkles"></i><span class="visually-hidden">What kind of company are you looking for?</span><textarea name="prompt" rows="3" minlength="3" maxlength="500" placeholder="e.g. {{ examples[0] }}" data-find-prompt required>{{ prompt }}</textarea></label>
 <div class="hx-find-examples">{% for e in examples %}<button type="button" class="hx-btn hx-btn-sm hx-btn-ghost" data-find-example="{{ e }}"><i class="fa-solid fa-lightbulb"></i><span>{{ e|truncate(60) }}</span></button>{% endfor %}</div>
 <button class="hx-btn hx-btn-solid" data-busy="thinking…"><span>find companies</span><i class="fa-solid fa-arrow-right"></i></button>
-<p class="hx-hint">// Enter to search, Shift+Enter for a new line{{ '' if ai_status().ready else ' · the local AI is offline: amounts, currencies, hours and the rest are still read by rules' }}</p>
+<p class="hx-hint">// Enter to search, Shift+Enter for a new line{{ '' if ai_status().ready else ' · ' ~ ai_name() ~ ' is offline: amounts, currencies, hours and the rest are still read by rules' }}</p>
 </form>
 </div>
 </section>

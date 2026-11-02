@@ -33,14 +33,15 @@
 <div class="col-lg-6"><article class="hx-card hx-reveal"><span class="hx-icon"><i class="fa-solid fa-money-bill-transfer"></i></span><h2>4. Money</h2>
 <ul class="hx-points"><li>{{ app_name }} never moves salary money. A company sends salaries from its own bank, then records each payment here; the numbers it checks (minimums, clearance, net worth, exchange rates) are only a help.</li>
 <li>Payroll rules and tax notes are AI-written summaries: they can be wrong or out of date and are not legal or tax advice.</li>
-<li>Shop payments run in test mode unless the owner has set real payments up; nothing is charged in test mode.</li></ul></article></div>
+<li>Shop payments run in test mode unless the owner has set real payments up; nothing is charged in test mode. Real payments go through Cashfree, and the site can also take cash on delivery only, or no orders at all.</li></ul></article></div>
 <div class="col-lg-6"><article class="hx-card hx-reveal"><span class="hx-icon"><i class="fa-solid fa-robot"></i></span><h2>5. AI features</h2>
-<ul class="hx-points"><li>The Deminic AI, the company finder, reviews, suggestions, promotions, task allotment, captions, notes and translations come from AI models running on this server. They can be wrong: a company that turns on automatic promotions is responsible for them.</li>
+<ul class="hx-points"><li>The Deminic AI, the company finder, reviews, suggestions, promotions, task allotment, notes and translations {% if ai_name() == 'Claude' %}come from Claude, Anthropic's AI: what they read is sent to Anthropic. Captions are made on this server{% else %}come from AI models running on this server. The site's admin can switch them to Claude, Anthropic's AI, and these terms then say so{% endif %}. They can be wrong: a company that turns on automatic promotions is responsible for them.</li>
 <li>Web search results come from DuckDuckGo or Wikipedia and are marked as such; check anything important yourself.</li>
 <li>Nothing the AI says is professional, legal, financial or medical advice.</li></ul></article></div>
 <div class="col-lg-6"><article class="hx-card hx-reveal"><span class="hx-icon"><i class="fa-solid fa-user-lock"></i></span><h2>6. Your data</h2>
 <ul class="hx-points"><li>You give your username, email, phone number, date of birth, bank details and an identity proof. Bank and ID numbers are encrypted; uploads are virus-scanned.</li>
 <li>A company's owner, co-owners, managers and HR can see its members' email, phone, attendance and company chats. Personal chats are only for the people in them.</li>
+<li>If you choose to verify your ID with Didit, a photo of it and a selfie go to Didit in the EU, only after you agree, and {{ app_name }} deletes them there when the check is done. Otherwise an AI on this server can read your ID photo; it's never sent to Claude. Company numbers can be looked up in public registries (EU VIES, UK Companies House, GLEIF).</li>
 <li>Every request is written to a daily activity log with its IP address; during a limiter overload every incoming IP is logged too. Admin actions are logged.</li></ul></article></div>
 <div class="col-lg-6"><article class="hx-card hx-reveal"><span class="hx-icon"><i class="fa-solid fa-hand"></i></span><h2>7. Fair use</h2>
 <ul class="hx-points"><li>No spam, flooding, scraping, impersonation, fake companies, fake payments, or attempts to break in or around any limit.</li>

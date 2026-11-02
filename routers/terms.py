@@ -5,7 +5,7 @@ from fastapi import APIRouter, Request
 from decoraters import cache, public
 from system import OWNER_NUMBER, render
 router = APIRouter(tags=["info"])
-UPDATED = "31 October 2026"
+UPDATED = "2 November 2026"
 @router.get("/terms")
 @public
 @cache.memoize(timeout=300)

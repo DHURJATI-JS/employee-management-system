@@ -44,10 +44,10 @@
 <p class="hx-err-msg" data-refused hidden></p>
 <ul class="hx-meet-facts">
 <li><i class="fa-solid fa-lock"></i><span>only the {{ people|length }} people invited can join, while they're in {{ c.name }}</span></li>
-<li><i class="fa-solid fa-closed-captioning"></i><span>{% if captions.ready %}what you say is captioned by Whisper on this server{{ ' and translated to English by the local AI' if english.ready }}{% else %}captions are off right now ({{ captions.detail }}){% endif %}; captions and chat are kept with the meeting</span></li>
+<li><i class="fa-solid fa-closed-captioning"></i><span>{% if captions.ready %}what you say is captioned by Whisper on this server{{ (' and translated to English by ' ~ ai_name()) if english.ready }}{% else %}captions are off right now ({{ captions.detail }}){% endif %}; captions and chat are kept with the meeting</span></li>
 <li><i class="fa-solid fa-circle-dot"></i><span>a host can record the call: everyone sees <b>● REC</b> while it records</span></li>
 <li><i class="fa-solid fa-eye"></i><span>afterwards the people invited and {{ c.name }}'s owner, co-owners, managers and HR can open the recording, captions, chat and AI notes</span></li>
-<li><i class="fa-regular fa-keyboard"></i><span>keys in the call: <kbd>M</kbd> mic · <kbd>V</kbd> camera · <kbd>S</kbd> share screen · <kbd>H</kbd> hand · <kbd>C</kbd> captions · <kbd>T</kbd> chat</span></li>
+<li><i class="fa-regular fa-keyboard"></i><span>keys in the call: <kbd>M</kbd> mic · <kbd>V</kbd> camera · <kbd>S</kbd> share screen · <kbd>H</kbd> hand · <kbd>C</kbd> captions · <kbd>T</kbd> chat · <kbd>D</kbd> theme</span></li>
 </ul>
 <a href="/meetings/{{ m.id }}" class="hx-meet-back"><i class="fa-solid fa-arrow-left"></i> back to the meeting's page</a>
 </div>
@@ -92,6 +92,7 @@
 <button type="button" class="hx-meet-btn" data-act="chat" aria-pressed="false" title="chat (T)"><i class="fa-solid fa-message"></i><span>chat</span><b class="hx-meet-badge" data-unread hidden></b></button>
 <button type="button" class="hx-meet-btn" data-act="notes" aria-pressed="false" title="the AI's live notes"><i class="fa-solid fa-wand-magic-sparkles"></i><span>notes</span></button>
 <button type="button" class="hx-meet-btn" data-act="people" aria-pressed="false" title="who's here"><i class="fa-solid fa-user-group"></i><span>people</span></button>
+<button type="button" class="hx-meet-btn" data-act="theme" title="switch between the dark and light theme (D)"><i class="fa-solid fa-circle-half-stroke"></i><span>theme</span></button>
 </div>
 <div class="hx-meet-bar-group">
 <button type="button" class="hx-meet-btn hx-meet-btn-leave" data-act="leave" title="leave the call"><i class="fa-solid fa-phone-slash"></i><span>leave</span></button>

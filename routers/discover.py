@@ -2,6 +2,7 @@
 and recommendations: listed companies nearest to your profile's vector."""
 import contextlib
 import changelog, completion
+from aijobs import Job
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -15,8 +16,8 @@ from fx import pay_in
 from regions import currency_of
 from payroll import at_work, hours_label, tz_name
 from resume import ResumeError, extract
-from system import AI_ASSIST, UPLOAD_DIR, FormError, client_ip, flash, render, unflash_saved
-from tables import CURRENCIES, DEFAULT_CURRENCY, JOIN_AS, POSITIONS, SALARY_PERIODS, Company, Profile, User, get_db, single_company_mode
+from system import UPLOAD_DIR, FormError, client_ip, flash, render, unflash_saved
+from tables import CURRENCIES, DEFAULT_CURRENCY, JOIN_AS, POSITIONS, SALARY_PERIODS, Company, Profile, User, claude_ready, get_db, single_company_mode
 router = APIRouter(tags=["discover"])
 SEARCH_MAX_DISTANCE = 0.85  # pgvector cosine distance: further than this (under 15% match) isn't shown
 def _uid(request: Request) -> int | None: return int(u["user_id"]) if (u := getattr(request.state, "user", None)) else None
@@ -55,9 +56,9 @@ async def profile_page(request: Request, db: AsyncSession = Depends(get_db)):
     uid = _uid(request)
     p = await _profile(db, uid)  # + growth suggestions: instant (rules + pgvector) and the latest AI review (grow.py)
     region = await db.scalar(select(User.region).where(User.id == uid))  # the salary you want defaults to your region's currency
-    dob = await db.scalar(select(User.dob).where(User.id == uid))
-    return render(request, "profile", {"profile": p, "ai_engine": AI_ASSIST, "currencies": CURRENCIES, "periods": SALARY_PERIODS, "default_currency": currency_of(region) or DEFAULT_CURRENCY,
-                                       "region": region, "dob": dob, "max_dob": adult_since().isoformat(), "done": completion.of_profile(request.state.user, p, dob),
+    dob, dob_locked = (await db.execute(select(User.dob, User.dob_changed_at).where(User.id == uid))).one()
+    return render(request, "profile", {"profile": p, "ai_engine": "claude" if claude_ready() else "vector","currencies": CURRENCIES, "periods": SALARY_PERIODS, "default_currency": currency_of(region) or DEFAULT_CURRENCY,
+                                       "region": region, "dob": dob, "dob_locked": bool(dob_locked), "max_dob": adult_since().isoformat(), "done": completion.of_profile(request.state.user, p, dob),
                                        "instant": await instant_profile(db, uid, p), "review": await get_review(db, "u", uid)})
 @router.post("/profile")
 async def save_profile(request: Request, form: ProfileForm = Depends(ProfileForm.as_form), db: AsyncSession = Depends(get_db)):
@@ -75,9 +76,9 @@ async def save_profile(request: Request, form: ProfileForm = Depends(ProfileForm
     return RedirectResponse("/profile", 303)
 @router.post("/profile/dob")
 async def add_dob(request: Request, form: DobForm = Depends(DobForm.as_form), db: AsyncSession = Depends(get_db)):
-    """Once only, for accounts made before signup asked for a date of birth: 18+ like at signup, and locked afterwards."""
+    """For accounts made before signup asked for a date of birth: 18+ like at signup. Changing one is another thing: once, with the password, in settings."""
     account = await db.get(User, _uid(request), with_for_update=True)
-    if account.dob: raise FormError("Your date of birth is already set and can't be changed.")
+    if account.dob: raise FormError("Your date of birth is already set: it can be changed once, in settings.")
     account.dob, name = form.dob, account.username
     await db.commit()
     await changelog.person(db, account.id, name, "date of birth added", f"{form.dob:%Y-%m-%d}")
@@ -108,7 +109,8 @@ def _discard(name: str | None) -> None:
 @router.post("/profile/resume")
 async def upload_resume(request: Request, form: ResumeForm = Depends(ResumeForm.as_form), db: AsyncSession = Depends(get_db)):
     unflash_saved(request, form.file)  # the outcome is flashed below
-    try: points, engine = await extract(UPLOAD_DIR / form.file)
+    try:
+        with Job(_uid(request)): points, engine = await extract(UPLOAD_DIR / form.file)
     except ResumeError as e:
         _discard(form.file)  # only kept if it was a readable PDF
         raise FormError(str(e)) from None

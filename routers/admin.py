@@ -5,7 +5,9 @@ an account (decoraters.guest_only). The admin sees the server's resources, the
 repeat offenders of the spam + rate limits (abuse.py) with the local AI's warnings, and can: ban an account with a clear reason (it can't
 log in, the login page says why; it's out of every company and its own companies are deleted, as when an account is deleted, but its
 chats stay), lift a ban, block / unblock IP addresses, and delete a company with a clear reason (its members are told why). Every admin
-action is in the activity log (audit.py) as "admin" and in the change logs of whoever it touched."""
+action is in the activity log (audit.py) as "admin" and in the change logs of whoever it touched.
+Services (user asked): the AI's mode (local vLLM or online Claude) and model, the ID checker and payments are switched here, and their keys are pasted here. A key is tried against the service first and saved
+to .env only if it works; no key is ever shown again, logged, or put in a message. Online AI and real payments only turn on while their key works at that moment."""
 import asyncio, csv, hmac, io, os, secrets, shutil, time
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -13,14 +15,17 @@ from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
-import abuse, audit, changelog
+import abuse, audit, changelog, grow, idcheck, shop
+from apikeys import cashfree_check_url, cashfree_pg_url, key, save_key
+from assist import rate_limited
 from decoraters import public
-from form import ActionForm, AdminIPForm, AdminLoginForm, AdminReasonForm, AdminSwitchForm
+from form import ActionForm, AdminChoiceForm, AdminIPForm, AdminKeyForm, AdminLimitForm, AdminLoginForm, AdminReasonForm, AdminSwitchForm
+from meet import out_of_company
 from presence import hub
 from routers.companies import erase_company
-from system import (ADMIN_COOKIE, ADMIN_PASSWORD, ADMIN_USERNAME, APP_NAME, CONTACT_EMAIL, ROOT, UPLOAD_DIR, FormError, admin_key, admin_session, block_entry, block_ip, blocked_list, blocks, client_ip, flash,
+from system import (ADMIN_COOKIE, ADMIN_PASSWORD, ADMIN_USERNAME, AI_STATUS, APP_NAME, CONTACT_EMAIL, ROOT, UPLOAD_DIR, FormError, admin_key, admin_session, block_entry, block_ip, blocked_list, blocks, client_ip, flash,
                     reddisdb, render, send_email, templates, unblock_ip)
-from tables import SITE, AbuseEvent, AIWarning, Company, Friendship, Membership, OverloadIP, SiteSetting, User, get_db, left_company, single_company_mode, utcnow
+from tables import CLAUDE_MODELS, SITE, SWITCHES, AbuseEvent, AIWarning, Company, Friendship, Membership, OverloadIP, SiteSetting, User, ai_name, ai_title, get_db, left_company, set_switch, single_company_mode, spent_now, utcnow
 router = APIRouter(tags=["admin"])
 COOKIE, ADMIN_TTL, TRIES = ADMIN_COOKIE, 7200, 5
 def _bytes(n) -> str:  # {{ n|bytes }}: 1.4 GB
@@ -43,6 +48,16 @@ async def _gate(request: Request) -> RedirectResponse | None:  # every console p
 async def _fails(db: AsyncSession, ip: str) -> int:  # wrong admin sign-ins from this IP since its last right one (in the last day)
     since = await db.scalar(select(func.max(AbuseEvent.at)).where(AbuseEvent.ip == ip, AbuseEvent.kind == "admin-ok")) or (utcnow() - timedelta(days=1))
     return await db.scalar(select(func.count()).select_from(AbuseEvent).where(AbuseEvent.ip == ip, AbuseEvent.kind == "admin-login", AbuseEvent.at > max(since, utcnow() - timedelta(days=1))))
+async def _wrong_try(db: AsyncSession, ip: str, detail: str) -> tuple[int, RedirectResponse | None]:  # a wrong admin password, at sign-in or when saving a key: (tries so far, where to go if that was the last)
+    db.add(AbuseEvent(kind="admin-login", ip=ip, detail=detail)); await db.commit()
+    abuse.alarm()  # the AI reviews the events again soon
+    fails = await _fails(db, ip)
+    audit.log(None, "admin", f"wrong admin sign-in ({fails}/{TRIES})", "401", ip)
+    if fails < TRIES: return fails, None
+    block_ip(ip, f"{TRIES} wrong admin sign-ins")
+    db.add(AbuseEvent(kind="ip-banned", ip=ip, detail=f"{TRIES} wrong admin sign-ins")); await db.commit()
+    audit.log(None, "admin", f"IP {ip} banned after {TRIES} wrong admin sign-ins", "403", ip)
+    return fails, RedirectResponse("/blocked", 303)
 # ---------- signing in / out ----------
 @router.get("/admin/login")
 @public
@@ -61,15 +76,8 @@ async def admin_login(request: Request, form: AdminLoginForm = Depends(AdminLogi
     ip = client_ip(request)
     right = hmac.compare_digest(form.username.encode(), ADMIN_USERNAME.encode()) & hmac.compare_digest(form.password.encode(), ADMIN_PASSWORD.encode())  # both always compared
     if not right:
-        db.add(AbuseEvent(kind="admin-login", ip=ip, detail=f"wrong admin sign-in as “{form.username[:40]}”")); await db.commit()
-        abuse.alarm()  # the AI reviews the events again soon
-        fails = await _fails(db, ip)
-        audit.log(None, "admin", f"wrong admin sign-in ({fails}/{TRIES})", "401", ip)
-        if fails >= TRIES:
-            block_ip(ip, f"{TRIES} wrong admin sign-ins")
-            db.add(AbuseEvent(kind="ip-banned", ip=ip, detail=f"{TRIES} wrong admin sign-ins")); await db.commit()
-            audit.log(None, "admin", f"IP {ip} banned after {TRIES} wrong admin sign-ins", "403", ip)
-            return RedirectResponse("/blocked", 303)
+        fails, banned = await _wrong_try(db, ip, f"wrong admin sign-in as “{form.username[:40]}”")
+        if banned: return banned
         left = TRIES - fails
         raise FormError(f"Wrong admin user id or password. {left} {'try' if left == 1 else 'tries'} left: after {TRIES} wrong tries this IP address ({ip}) is banned from {APP_NAME}.")
     token = secrets.token_urlsafe(32)
@@ -150,6 +158,17 @@ async def overloads(db: AsyncSession, pick: str = "") -> dict:
     names = dict((await db.execute(select(User.id, User.username).where(User.id.in_({i.user_id for i in ips if i.user_id})))).all()) if ips else {}
     entries = [e for e, _ in blocked_list()]
     return {"runs": runs, "cur": cur, "ips": ips, "names": names, "banned": {i.ip for i in ips if any(blocks(e, i.ip) for e in entries)}, "active": abuse.overload["since"], "at": abuse.OVERLOAD_AT, "hold": abuse.HOLD_TEXT}
+KEYS = {"claude": ("ANTHROPIC_API_KEY",), "didit": ("DIDIT_API_KEY", "DIDIT_WORKFLOW_ID"), "cashfree_pay": ("CASHFREE_PG_CLIENT_ID", "CASHFREE_PG_CLIENT_SECRET"), "cashfree_id": ("CASHFREE_CLIENT_ID", "CASHFREE_CLIENT_SECRET"), "companies_house": ("COMPANIES_HOUSE_KEY",)}  # .env's names
+NAMES = {"claude": "Claude", "didit": "Didit", "cashfree_pay": "Cashfree payments", "cashfree_id": "Cashfree ID checks", "companies_house": "Companies House"}
+def _services_now() -> dict:  # what the console's services section shows: never a key, only whether it's there
+    return {"ai_mode": SITE["ai_mode"], "model": SITE["claude_model"], "models": CLAUDE_MODELS, "claude": bool(key("ANTHROPIC_API_KEY")), "limit": SITE["claude_limit"], "spent": spent_now(), "id_checks": SITE["id_checks"], "didit": idcheck.didit_ready(), "cashfree_id": idcheck.cashfree_ready(),
+            "cashfree_id_live": key("CASHFREE_ENV") != "sandbox", "house": bool(key("COMPANIES_HOUSE_KEY")), "payments": SITE["payments"], "pay_now": shop.pay_mode(), "cashfree_pay": shop.cashfree_ready(), "cashfree_pay_live": key("CASHFREE_PG_ENV") == "production"}
+def _try_key(service: str, one: str, two: str, live: bool) -> str:  # (a thread) does the service take this key? "" = yes, else why not
+    if service == "claude": return grow.try_claude(one, SITE["claude_model"])
+    if service == "companies_house": return idcheck.try_house(one)
+    if len(two) < 8: return "both boxes are needed."
+    if service == "didit": return idcheck.try_didit(one, two)
+    return shop.try_cashfree(one, two, cashfree_pg_url(live)) if service == "cashfree_pay" else idcheck.try_cashfree(one, two, cashfree_check_url(live))
 @router.get("/admin")
 @public
 async def console(request: Request, q: str = "", overload: str = "", db: AsyncSession = Depends(get_db)):
@@ -160,6 +179,7 @@ async def console(request: Request, q: str = "", overload: str = "", db: AsyncSe
     on, n = await single_company_mode(db, lock=False), await db.scalar(select(func.count()).select_from(Company))
     return render(request, "admin", {"use": await usage(db), "offenders": await offenders(db), "ov": await overloads(db, overload[:24]), "q": q, "found": found, "companies": companies, "ips": blocked_list(),
                                      "mode": {"on": on, "companies": n, "blocked": not on and n > 1},  # the single company switch: off and 2+ companies = can't be turned on
+                                     "sv": _services_now(),
                                      "warnings": (await db.scalars(select(AIWarning).order_by(AIWarning.id.desc()).limit(12))).all(),
                                      "banned": (await db.scalars(select(User).where(User.banned_at.is_not(None)).order_by(User.banned_at.desc()).limit(50))).all()})
 @router.get("/admin/overloads/{key}.csv")
@@ -192,6 +212,58 @@ async def admin_single_company(request: Request, form: AdminSwitchForm = Depends
     audit.log("admin", "admin", f"single company mode turned {row.value}", "ok", client_ip(request))
     flash(request, "Single company mode is on: nobody can create a company now." if form.on else "Single company mode is off: companies can be created again.", "success")
     return RedirectResponse("/admin#mode", 303)
+@router.post("/admin/switch")
+@public
+async def admin_switch(request: Request, form: AdminChoiceForm = Depends(AdminChoiceForm.as_form), db: AsyncSession = Depends(get_db)):
+    """The AI's mode and model, the ID checker, payments. Online AI and real payments turn on only if their key works right now: the service is asked first."""
+    if r := await _gate(request): return r
+    if form.name not in SWITCHES or form.value not in SWITCHES[form.name]: raise FormError("That isn't one of the choices.")
+    if (form.name, form.value) == ("ai_mode", "online") or (form.name == "claude_model" and SITE["ai_mode"] == "online"):
+        if not (api_key := key("ANTHROPIC_API_KEY")): raise FormError("Paste a Claude API key first: the AI stays on vLLM until one works.")
+        if why := await asyncio.to_thread(grow.try_claude, api_key, form.value if form.name == "claude_model" else SITE["claude_model"]): raise FormError(f"Nothing changed: {why}")
+    if (form.name, form.value) == ("payments", "cashfree"):
+        if not shop.cashfree_ready(): raise FormError("Paste Cashfree's payment keys first: checkout stays as it is until they work.")
+        if why := await asyncio.to_thread(shop.try_cashfree, key("CASHFREE_PG_CLIENT_ID"), key("CASHFREE_PG_CLIENT_SECRET"), cashfree_pg_url()): raise FormError(f"Nothing changed: {why}")
+    await set_switch(db, form.name, form.value)
+    if form.name in ("ai_mode", "claude_model"): AI_STATUS.update(await asyncio.to_thread(grow.check_ai))
+    audit.log("admin", "admin", f"{form.name} set to {form.value}", "ok", client_ip(request))
+    flash(request, {"ai_mode": f"The AI runs on {ai_name()} now.", "claude_model": f"Claude's model is {CLAUDE_MODELS.get(form.value, form.value)} now.", "id_checks": f"ID checks are {form.value}.", "payments": f"Payments: {form.value}."}[form.name], "success")
+    return RedirectResponse("/admin#services", 303)
+@router.post("/admin/keys")
+@public
+async def admin_keys(request: Request, form: AdminKeyForm = Depends(AdminKeyForm.as_form), db: AsyncSession = Depends(get_db)):
+    """A key for an outside service: with the admin's password again, so a console left open can't swap one, and wrong tries count like wrong sign-ins. Asked for real first, and saved to .env
+    only if it works. No restart: the app reads .env when it changes."""
+    if r := await _gate(request): return r
+    if not hmac.compare_digest(form.admin_password.encode(), ADMIN_PASSWORD.encode()):
+        fails, banned = await _wrong_try(db, client_ip(request), "wrong admin password when saving a key")
+        if banned: return banned
+        raise FormError(f"Wrong admin password: nothing was saved. {TRIES - fails} {'try' if TRIES - fails == 1 else 'tries'} left before this IP address is banned.")
+    db.add(AbuseEvent(kind="admin-ok", ip=client_ip(request), detail="admin password given to save a key")); await db.commit()  # the right one: like signing in, the count starts again
+    if rate_limited("admin-keys", 20, 3600): raise FormError("That's a lot of keys for one hour: try again later.")
+    name = NAMES[form.service]
+    if why := await asyncio.to_thread(_try_key, form.service, form.key_one, form.key_two, form.live):
+        audit.log("admin", "admin", f"{name} key turned down", why[:80], client_ip(request))
+        raise FormError(f"Not saved: {why}")
+    try:
+        for n, v in zip(KEYS[form.service], (form.key_one, form.key_two)): save_key(n, v)
+        if form.service == "cashfree_pay": save_key("CASHFREE_PG_ENV", "production" if form.live else "sandbox")
+        if form.service == "cashfree_id": save_key("CASHFREE_ENV", "production" if form.live else "sandbox")
+    except OSError as e: raise FormError(f"It works, but .env couldn't be written ({type(e).__name__}): add it by hand.") from None
+    if form.service == "claude": AI_STATUS.update(await asyncio.to_thread(grow.check_ai))
+    audit.log("admin", "admin", f"{name} key saved", "ok", client_ip(request))
+    flash(request, f"{name}: it works, and it's saved in .env.", "success")
+    return RedirectResponse("/admin#services", 303)
+@router.post("/admin/claude-limit")
+@public
+async def admin_claude_limit(request: Request, form: AdminLimitForm = Depends(AdminLimitForm.as_form), db: AsyncSession = Depends(get_db)):
+    """What Claude may cost in a month, by the app's own count: past it the AI is offline until this is raised or the month ends."""
+    if r := await _gate(request): return r
+    await set_switch(db, "claude_limit", f"{form.usd:g}")
+    AI_STATUS.update(await asyncio.to_thread(grow.check_ai))
+    audit.log("admin", "admin", f"Claude's monthly limit set to ${form.usd:g}", "ok", client_ip(request))
+    flash(request, f"Claude's monthly limit is ${form.usd:g} now.", "success")
+    return RedirectResponse("/admin#services", 303)
 async def ban_user(db: AsyncSession, u: User, reason: str, ip: str) -> list[str]:
     """As when an account is deleted: out of every company, its own companies deleted (their members told why), friends gone, logged out
     everywhere; but the account row stays, so its chat messages keep their sender and are never erased. Returns the companies deleted."""
@@ -204,6 +276,7 @@ async def ban_user(db: AsyncSession, u: User, reason: str, ip: str) -> list[str]
     u.banned_at, u.ban_reason, u.banned_by, u.login_id = utcnow(), reason, "admin", None  # login_id: every session ends at once
     db.add(AbuseEvent(kind="banned", user_id=u.id, ip=ip, detail=reason[:300]))
     await db.commit()
+    for cid in left: await out_of_company(cid, u.id)
     await hub.kick(u.id)  # their open tabs lose the live connection at once
     changelog.add("u", u.id, "banned by the admin", reason, by="admin")
     for cid in left: changelog.company(cid, f"{u.username} was banned by the {APP_NAME} admin and is no longer in the company", reason, by="admin")
@@ -271,5 +344,5 @@ async def admin_ai_review(request: Request, _: ActionForm = Depends(ActionForm.a
     if r := await _gate(request): return r
     from meet import ai
     ai.put(abuse.review)  # behind captions + the chat AI: it's not urgent
-    flash(request, "The local AI is reading the last 7 days of events: its warnings show here in a minute or two.", "info")
+    flash(request, f"{ai_title()} is reading the last 7 days of events: its warnings show here in a minute or two.", "info")
     return RedirectResponse("/admin#warnings", 303)

@@ -12,7 +12,7 @@
 {% if not company.allow_other_companies %}<p class="hx-about"><b>rule:</b> employees work only here (no other companies)</p>{% endif %}
 {% if company.location_address or company.website or company.registration_number %}<ul class="hx-co-facts">
 {% if company.location_address %}<li><i class="fa-solid fa-location-dot"></i><a href="{{ maps_link(company.location_lat, company.location_lng) }}" target="_blank" rel="noopener noreferrer" title="Open on OpenStreetMap">{{ company.location_address }}</a> <span class="hx-verified" title="Verified with Geoapify"><i class="fa-solid fa-circle-check"></i> verified</span></li>{% endif %}
-{% if company.registration_number %}<li><i class="fa-solid fa-id-badge"></i>{{ company.registration_type }}: <b>{{ company.registration_number }}</b></li>{% endif %}
+{% if company.registration_number %}<li><i class="fa-solid fa-id-badge"></i>{{ company.registration_type }}: <b>{{ company.registration_number }}</b> · {{ company_status(company) }}{% if company.reg_note %} · <span class="hx-missing">{{ company.reg_note }}</span>{% endif %}</li>{% endif %}
 {% if company.website %}<li><i class="fa-solid fa-link"></i><a href="{{ company.website }}" target="_blank" rel="noopener noreferrer nofollow ugc">{{ company.website }}</a></li>{% endif %}
 {% if company.exact_address %}<li><i class="fa-solid fa-door-open"></i>{{ company.exact_address }}</li>{% endif %}
 <li><i class="fa-solid fa-clock"></i>working hours {{ work_hours(company) }} <small>({{ tz_name(company) }}{{ your_hours(company) }})</small></li>

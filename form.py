@@ -64,8 +64,14 @@ class RegisterForm(FormModel):
         if not phonenumbers.is_valid_number(number): raise ValueError("that isn't a valid phone number")
         return phonenumbers.format_number(number, phonenumbers.PhoneNumberFormat.E164)
 @as_form
-class DobForm(FormModel):  # one-time: accounts made before signup asked for it can add their date of birth (same 18+ rule); then it's locked
+class DobForm(FormModel):  # accounts made before signup asked for it can add their date of birth (same 18+ rule)
     dob: date
+    @model_validator(mode="after")
+    def _adult(self): check_adult(self.dob); return self
+@as_form
+class DobChangeForm(FormModel):  # settings: a date of birth changes once after signup, with the current password, 18+ as at signup
+    dob: date
+    password: str = Field(min_length=1, max_length=128)
     @model_validator(mode="after")
     def _adult(self): check_adult(self.dob); return self
 @as_form
@@ -88,6 +94,25 @@ class AdminLoginForm(FormModel):  # the admin console's sign-in (routers/admin.p
 @as_form
 class AdminSwitchForm(FormModel):  # an admin console switch (single company mode): a checkbox, absent when it's turned off
     on: bool = False
+@as_form
+class AdminChoiceForm(FormModel):  # one of the admin console's other switches (tables.SWITCHES: the AI's mode and model, the ID checker, payments)
+    name: str = Field(max_length=20)
+    value: str = Field(max_length=40)
+@as_form
+class AdminLimitForm(FormModel):  # what Claude may cost in a month, in US dollars
+    usd: float = Field(ge=0, le=100000, allow_inf_nan=False)
+@as_form
+class AdminKeyForm(FormModel):  # an outside service's key: needs the admin's password again, tried, saved to .env only if it works, never shown again (no value of it ever goes into a message)
+    service: Literal["claude", "didit", "cashfree_pay", "cashfree_id", "companies_house"]
+    key_one: str = Field(min_length=8, max_length=400)
+    key_two: str = Field(default="", max_length=400)
+    live: bool = False  # Cashfree: real keys, not sandbox ones
+    admin_password: str = Field(min_length=1, max_length=256)
+    @field_validator("key_one", "key_two")
+    @classmethod
+    def _key(cls, v: str) -> str:
+        if not re.fullmatch(r"[!-~]*", v := v.strip()): raise ValueError("a key has no spaces or special characters: copy it again")
+        return v
 @as_form
 class AIModeForm(FormModel):  # the company AI's promotion review: off / it suggests / it promotes by itself
     mode: Literal["off", "suggest", "auto"]
@@ -253,7 +278,8 @@ class CompanyForm(CompanyDetails):
             raise ValueError(f"Company bank account{' (' + where + ')' if where else ''}: {err['msg'].removeprefix('Value error, ')}") from None
         return self
 @as_form
-class CompanySettingsForm(CompanyDetails): pass  # edit modal: the route checks who may edit and that no held position is removed
+class CompanySettingsForm(CompanyDetails):  # edit modal: the route checks the password, who may edit and that no held position is removed
+    password: str = Field(min_length=1, max_length=128)
 class _Wants(FormModel):  # the salary range a person wants (profile form + the instruction bar's "I want 50k-80k a month")
     want_min: int | None = Field(default=None, ge=1, le=MAX_SALARY)  # empty = no salary preference
     want_max: int | None = Field(default=None, ge=1, le=MAX_SALARY)  # empty = "at least want_min"
@@ -746,6 +772,10 @@ class IdentityForm(FormModel):  # settings: your identity proof (needed to join 
         check, example = ID_FORMATS[self.id_type]
         if not check(self.id_number): raise ValueError(f"That {ID_TYPES[self.id_type]} number doesn't look right: enter {example}.")
         return self
+@as_form
+class IdentityCheckForm(FormModel):  # settings: "verify my ID" (idcheck.py). consent: their ID + a selfie go to Didit
+    ONCE: ClassVar[int] = TWICE_S  # (a double click, 8 tabs: one call to Didit)
+    consent: bool = False
 @as_form
 class CompanyProofForm(FormModel):  # the company dashboard: add / replace its identity proof (owner / co-owners)
     id_proof_type: Literal[tuple(COMPANY_PROOFS)]

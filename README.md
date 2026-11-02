@@ -28,7 +28,7 @@
 </p>
 
 > [!IMPORTANT]
-> **A student project, and not free to use.** It hasn't been audited or certified, and using, copying, hosting or building on it needs the owner's permission first. See the [license](#-license).
+> **A student project, free to use under the MIT license.** It hasn't been audited or certified and comes with no warranty, so check it carefully before relying on it. See the [license](#-license).
 
 <p align="center">
   <img src="docs/screenshots/home.png" alt="The Deminic home page: Run your team. Protect your people." width="100%">
@@ -416,4 +416,4 @@ powershell -ExecutionPolicy Bypass -File .\setup_services.ps1
 
 ## 📄 License
 
-All rights reserved. This software is not free to use: using it, copying it, hosting it or building on it needs the owner's permission first. It's provided as is, without warranty, and the owner isn't liable for any damages from using it. The full terms and the owner's contact details are on the app's `/terms` page.
+Released under the [MIT license](LICENSE): anyone can use it, copy it, host it or build on it, as long as the license notice stays with it. It's provided as is, without warranty, and the owner isn't liable for any damages from using it. The terms for using a running site and the owner's contact details are on the app's `/terms` page.

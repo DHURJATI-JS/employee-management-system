@@ -1,5 +1,5 @@
 """/terms: the site's own terms & conditions (user asked): how to use it, that it's a student-grade project, that its owner isn't liable for
-any damages, and that it isn't free to use: ask the owner first (CONTACT_EMAIL and OWNER_NUMBER in .env, shown on the page and never in the code).
+any damages, and that the code is under the MIT license, see LICENSE (CONTACT_EMAIL and OWNER_NUMBER in .env, shown on the page and never in the code).
 Each company's own joining terms are separate (tables.STANDARD_TERMS + what the company writes, accepted before joining)."""
 from fastapi import APIRouter, Request
 from decoraters import cache, public

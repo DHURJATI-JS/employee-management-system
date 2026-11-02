@@ -121,6 +121,8 @@
 <button type="button" class="hx-icon-btn hx-modal-x" data-mdb-dismiss="modal" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
 <div class="modal-body">
 <form method="post" action="/companies/{{ c.id }}/settings" class="hx-form" id="edit-form-{{ c.id }}">{{ csrf_input(request) }}
+<label class="hx-field"><i class="fa-solid fa-building"></i><span class="visually-hidden">Company name</span><span class="hx-pfx" aria-hidden="true">name:</span><input name="name" value="{{ c.name }}" minlength="2" maxlength="64" required></label>
+<p class="hx-hint">// only the owner and co-owners can rename it · 2-64 letters, digits, spaces or . , &amp; ' ( ) + -</p>
 {% with held=card.held %}{% include "_company_fields.html" %}{% endwith %}
 <label class="hx-field"><i class="fa-solid fa-key"></i><span class="visually-hidden">Your password, to save these changes</span><span class="hx-pfx" aria-hidden="true">your password:</span><input type="password" name="password" maxlength="128" autocomplete="current-password" required></label>
 <p class="hx-hint">// your password is needed to save changes to a company</p>

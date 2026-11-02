@@ -237,6 +237,10 @@ class _CompanyDetails(FormModel):  # shared by create + the edit modal (+ one sa
         if missing := [POSITIONS[k]["label"] for k in self.positions if not getattr(self, f"salary_{k}")]: raise ValueError(f"Set the minimum salary for {', '.join(missing)}: every position you offer needs one.")
         return self
     def salaries(self) -> dict[str, int]: return {k: getattr(self, f"salary_{k}") for k in self.positions}  # offered positions only
+def company_name(v: str) -> str:  # a company's name: when it's created, and when the owner or a co-owner renames it
+    v = unicodedata.normalize("NFC", " ".join(v.split()))  # collapse whitespace; no control characters can survive split()
+    if not 2 <= len(v) <= 64 or not written_ok(v, "_ .,&'()+-"): raise ValueError("use 2-64 letters, digits, spaces or . , & ' ( ) + -")
+    return v
 CompanyDetails = create_model("CompanyDetails", __base__=_CompanyDetails, **{f"salary_{k}": (int | None, Field(default=None, ge=1, le=MAX_SALARY)) for k in STAFF})
 @as_form
 class CompanyForm(CompanyDetails):
@@ -261,10 +265,7 @@ class CompanyForm(CompanyDetails):
     open_shop: bool = False  # ... and open a shop on the marketplace (routers/seller.py)
     @field_validator("name")
     @classmethod
-    def _name(cls, v: str) -> str:
-        v = unicodedata.normalize("NFC", " ".join(v.split()))  # collapse whitespace; no control characters can survive split()
-        if not 2 <= len(v) <= 64 or not written_ok(v, "_ .,&'()+-"): raise ValueError("use 2-64 letters, digits, spaces or . , & ' ( ) + -")
-        return v
+    def _name(cls, v: str) -> str: return company_name(v)
     def company_account(self) -> "CompanyAccount | None":  # None = left empty (add it later on the dashboard)
         if not any(v.strip() for v in (self.co_bank, self.co_branch, self.co_routing, self.co_ifsc, self.co_swift, self.co_account, self.co_account_confirm)): return None
         return CompanyAccount(holder_name=self.co_holder.strip() or self.name, bank_name=self.co_bank, branch=self.co_branch, country=self.co_country, routing=self.co_routing or self.co_ifsc,
@@ -278,8 +279,12 @@ class CompanyForm(CompanyDetails):
             raise ValueError(f"Company bank account{' (' + where + ')' if where else ''}: {err['msg'].removeprefix('Value error, ')}") from None
         return self
 @as_form
-class CompanySettingsForm(CompanyDetails):  # edit modal: the route checks the password, who may edit and that no held position is removed
+class CompanySettingsForm(CompanyDetails):  # edit modal: the route checks the password, who may edit (the owner and co-owners) and that no held position is removed
+    name: str | None = Field(default=None, max_length=64)  # a new name, by the same rules as at creation; left out: unchanged
     password: str = Field(min_length=1, max_length=128)
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: str | None) -> str | None: return None if v is None else company_name(v)
 class _Wants(FormModel):  # the salary range a person wants (profile form + the instruction bar's "I want 50k-80k a month")
     want_min: int | None = Field(default=None, ge=1, le=MAX_SALARY)  # empty = no salary preference
     want_max: int | None = Field(default=None, ge=1, le=MAX_SALARY)  # empty = "at least want_min"

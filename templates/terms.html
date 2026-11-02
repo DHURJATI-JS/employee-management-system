@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{# routers/terms.py: the site's own terms (user asked): how to use it, a student-grade project, no liability, not free to use: ask the owner (contact_email, whatsapp = (shown, wa.me digits): CONTACT_EMAIL + OWNER_NUMBER in .env) #}
+{# routers/terms.py: the site's own terms (user asked): how to use it, a student-grade project, no liability, the code is under the MIT license (contact_email, whatsapp = (shown, wa.me digits): CONTACT_EMAIL + OWNER_NUMBER in .env) #}
 {% block title %}Terms & conditions{% endblock %}
 {% block content %}<div class="hx-wide hx-site-terms">
 <section class="hx-term hx-page-head">
@@ -9,19 +9,19 @@
 <p class="hx-sub">// the terms for using {{ app_name }}. By signing up, logging in or using any part of it, you accept them</p>
 <div class="hx-terms-key">
 <p class="hx-err-msg"><i class="fa-solid fa-graduation-cap"></i> <span><b>A student-grade project.</b> {{ app_name }} was built as a student project. It is not a certified, audited or commercially supported product.</span></p>
-<p class="hx-err-msg"><i class="fa-solid fa-ban"></i> <span><b>Not for free use.</b> This software is not meant for free use. Before you use it, for yourself, a team or a company, contact the owner directly and ask for permission.</span></p>
+<p class="hx-err-msg"><i class="fa-solid fa-scale-balanced"></i> <span><b>Free to use.</b> The code is free to use under the MIT license: anyone can use it, copy it, host it or build on it, as long as the license notice stays with it.</span></p>
 <p class="hx-err-msg"><i class="fa-solid fa-shield-halved"></i> <span><b>No liability.</b> The owner is not liable for any damages caused by using {{ app_name }}, from now on.</span></p>
 </div>
-<div class="hx-actions"><a href="mailto:{{ contact_email }}?subject={{ (app_name ~ ' usage request')|urlencode }}" class="hx-btn hx-btn-solid"><i class="fa-solid fa-envelope"></i><span>{{ contact_email }}</span></a>
+<div class="hx-actions"><a href="mailto:{{ contact_email }}?subject={{ (app_name ~ ' question')|urlencode }}" class="hx-btn hx-btn-solid"><i class="fa-solid fa-envelope"></i><span>{{ contact_email }}</span></a>
 {% if whatsapp[1] %}<a href="https://wa.me/{{ whatsapp[1] }}" class="hx-btn" target="_blank" rel="noopener noreferrer"><i class="fa-brands fa-whatsapp"></i><span>WhatsApp {{ whatsapp[0] }}</span></a>{% endif %}</div>
 </div>
 </section>
 <section class="hx-section">
 <div class="row g-4">
-<div class="col-lg-6"><article class="hx-card hx-reveal"><span class="hx-icon"><i class="fa-solid fa-handshake"></i></span><h2>1. Permission to use</h2>
-<ul class="hx-points"><li>{{ app_name }} is not free software and not a free service. Using it, copying it, hosting it or building on it needs the owner's permission first.</li>
-<li>To ask, write to <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>{% if whatsapp[1] %} or message <a href="https://wa.me/{{ whatsapp[1] }}" target="_blank" rel="noopener noreferrer">{{ whatsapp[0] }} on WhatsApp</a>{% endif %}, and say who you are and what you want to use it for.</li>
-<li>Permission can be refused or withdrawn at any time, and an account can be closed or banned without notice.</li></ul></article></div>
+<div class="col-lg-6"><article class="hx-card hx-reveal"><span class="hx-icon"><i class="fa-solid fa-handshake"></i></span><h2>1. License</h2>
+<ul class="hx-points"><li>{{ app_name }}'s code is free software under the MIT license: anyone can use it, copy it, host it or build on it, as long as the license notice stays with it.</li>
+<li>For questions, write to <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>{% if whatsapp[1] %} or message <a href="https://wa.me/{{ whatsapp[1] }}" target="_blank" rel="noopener noreferrer">{{ whatsapp[0] }} on WhatsApp</a>{% endif %}.</li>
+<li>These terms apply to this site and its accounts. An account can be closed or banned without notice.</li></ul></article></div>
 <div class="col-lg-6"><article class="hx-card hx-reveal"><span class="hx-icon"><i class="fa-solid fa-graduation-cap"></i></span><h2>2. A student-grade project</h2>
 <ul class="hx-points"><li>{{ app_name }} is a student project. It has been tested by its author, but it hasn't been audited, certified or tested for real-world use at scale.</li>
 <li>It can have bugs, security gaps, downtime and data loss. Features can change or disappear at any time.</li>
@@ -55,7 +55,7 @@
 <section class="hx-section">
 <p class="hx-eyebrow">// how to use {{ app_name }}</p>
 <ol class="hx-pipeline hx-pipeline-4">
-<li class="hx-reveal"><span class="hx-icon"><i class="fa-solid fa-envelope-open-text"></i></span><h3>ask first</h3><p>get the owner's permission by email or WhatsApp</p></li>
+<li class="hx-reveal"><span class="hx-icon"><i class="fa-solid fa-file-signature"></i></span><h3>read these terms</h3><p>they apply to every account on this site</p></li>
 <li class="hx-reveal"><span class="hx-icon"><i class="fa-solid fa-user-plus"></i></span><h3>sign up</h3><p>username, email + phone (both verified by code), date of birth (18+)</p></li>
 <li class="hx-reveal"><span class="hx-icon"><i class="fa-solid fa-id-card"></i></span><h3>get ready</h3><p>in settings: bank details and an identity proof; then a profile and CV</p></li>
 <li class="hx-reveal"><span class="hx-icon"><i class="fa-solid fa-building"></i></span><h3>create or join</h3><p>a company (joining needs its approval and its terms accepted)</p></li>

@@ -2,7 +2,7 @@ import uuid
 import changelog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -325,6 +325,9 @@ async def company_settings(request: Request, company_id: uuid.UUID, form: Compan
                      f"{company.name} changed its terms and conditions (version {company.terms_version}). Read them and accept the new version on its dashboard.", f"/companies/{company_id}/dashboard#terms", key)
         await notify(db, list(asking), company, "warn", f"{company.name} updated its terms and conditions",
                      f"{company.name} changed its terms while you were waiting to join: accept the new version on the join page, or your request can't be approved.", f"/companies/join/{company_id}", key)
+    if renamed := bool(form.name) and form.name != company.name:  # (only the owner and co-owners get this far: can_edit above)
+        company.name = form.name
+        await db.execute(update(Chat).where(Chat.company_id == company_id, Chat.kind == "enquiry").values(title=form.name[:60]))  # outsiders' enquiry chats carry its name
     company.description, company.hiring, company.listed, company.positions = form.description, form.hiring, form.listed, form.positions
     company.allow_other_companies, company.salary_currency, company.salary_period = form.allow_other_companies, form.salary_currency, form.salary_period
     apply_identity(company, form, place)
@@ -347,6 +350,7 @@ async def company_settings(request: Request, company_id: uuid.UUID, form: Compan
     terms = f" Terms and conditions updated (version {company.terms_version}): every member and applicant is asked to accept them." if terms_changed else ""
     terms += f" Salaries agreed with people were converted to {company.salary_currency} per {company.salary_period} at today's rate; new pay starts with each person's next cycle." if converted else ""
     terms += f" Working hours changed: the next change can be from {hours_locked(company)}." if hours_moved else ""
+    terms += f" Renamed from {before['name']}." if renamed else ""
     flash(request, f"{company.name} saved{' (' + ', '.join(changes) + ')' if changes else ''}. {'Listed: anyone can find and join it.' if company.listed else 'Not listed: invite code only.'} {rule}{terms}", "success")
     return RedirectResponse(f"/workplaces#c-{company_id}", 303)
 @router.post("/companies/{company_id}/terms/accept")
